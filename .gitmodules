@@ -1,0 +1,9 @@
+[submodule "src/dependencies/libigl"]
+	path = src/dependencies/libigl
+	url = git@github.com:libigl/libigl.git
+[submodule "src/dependencies/spectra"]
+	path = src/dependencies/spectra
+	url = git@github.com:yixuan/spectra.git
+[submodule "src/dependencies/eigen"]
+	path = src/dependencies/eigen
+	url = git@github.com:libigl/eigen.git
