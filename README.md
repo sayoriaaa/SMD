@@ -20,7 +20,7 @@ SMD-lab旨在提供一个跨平台、开箱即用的保特征网格降噪算法�
 | [(SIGGRAPH'13) Mesh denoising via *L*0 minimization](https://dl.acm.org/doi/10.1145/2461912.2461965) | [(SIGGRAPH'14) Decoupling Noises and Features via Weighted *l*1-analysis Compressed Sensing](http://staff.ustc.edu.cn/~lgliu/Projects/2014_DecouplingNoise/default.htm) | [（Pacific Graphics'18）Non-Local Low-Rank Normal Filtering for Mesh Denoising](https://onlinelibrary.wiley.com/doi/abs/10.1111/cgf.13556) | [(SIGGRAPH'03) Bilateral mesh denoising](https://dl.acm.org/doi/10.1145/882262.882368) |
 |                                                              |                                                              |                                                              |                                                              |
 
-该项目正在持续编写中，目前已完成了$L_0$算法的所有细节和优化（未来将提供cuda实现）;基于压缩感知的降噪算法正在复现中，已完成了$C^2$连续网格的降噪，目前正在研究SOCP优化的求解。
+该项目正在持续编写中，目前已完成了$L_0$算法的所有细节和优化（正在进行cuda实现的优化）;基于压缩感知的降噪算法正在复现中，已完成了$C^2$连续网格的降噪，目前正在研究SOCP优化的求解。
 
 ## 使用
 
@@ -30,7 +30,15 @@ git submodule update --init --recursive
 
 ### 编译
 
-windows： 双击运行`bash/build.sh` (请确保安装mingw64和cmake并添加至环境路径)
+windows： 双击运行`bash/build.bat` (请确保安装[mingw64](https://sourceforge.net/projects/mingw-w64/files/)和cmake并添加至环境路径)
+
+若安装了CUDA toolkit（[我的使用版本](https://developer.nvidia.com/cuda-downloads?target_os=Windows&target_arch=x86_64&target_version=10&target_type=exe_local)），则会自动识别并编译GPU程序。在windows下，需要安装VS Studio并将cl.exe添加至环境路径，并且先以管理员权限运行`cuda.bat`。
+
+```
+Hint: For new Visual Studio cl.exe is present in path => C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.23.28105\bin\Hostx64\x64
+x64 is for 64bit
+x86 is for 32bit
+```
 
 ### 创建python环境 (可选)
 

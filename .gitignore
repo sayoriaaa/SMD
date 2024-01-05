@@ -3,13 +3,12 @@
 data/*
 !data/examples
 
-src/dependencies/*
-
 build
 
 run/*
 
 bash/*
-!build.bat
+!bash/build.bat
 !bash/test_cube.bat
 !bash/eval_cube.bat
+!bash/cuda.bat

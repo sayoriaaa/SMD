@@ -1,8 +1,92 @@
-#include "l0.hpp"
-//#include <igl/read_triangle_mesh.h>
+#include <stdio.h>
+#include <chrono>
 #include <igl/writeOBJ.h>
 #include <igl/readOBJ.h>
-#include <chrono>
+#include "l0.hpp"
+#include <cusolverSp.h>
+#include <cusparse.h>
+
+#define checkCudaErrors(call)                                 \
+  do {                                                        \
+    cudaError_t err = call;                                   \
+    if (err != cudaSuccess) {                                 \
+      printf("CUDA error at %s %d: %s\n", __FILE__, __LINE__, \
+             cudaGetErrorString(err));                        \
+      exit(EXIT_FAILURE);                                     \
+    }                                                         \
+  } while (0)
+
+
+void solveCholesky(const Eigen::SparseMatrix<double> &A, const Eigen::VectorXd &b, Eigen::VectorXd &x){
+// ref: https://stackoverflow.com/questions/57334742/convert-eigensparsematrix-to-cusparse-and-vice-versa
+    const int nnzA = A.nonZeros();
+    const int colsA = A.cols();
+
+    // create cuda sparse matrix A and cuda vector x
+    int* d_csrRowPtr;
+    int* d_csrColInd;       
+    double* d_csrVal;
+
+    checkCudaErrors(cudaMalloc((void**)&d_csrRowPtr, sizeof(int) * (colsA+1)));
+    checkCudaErrors(cudaMalloc((void**)&d_csrColInd, sizeof(int) * nnzA));
+    checkCudaErrors(cudaMalloc((void**)&d_csrVal, sizeof(double) * nnzA));
+
+    checkCudaErrors(cudaMemcpy(d_csrRowPtr, A.outerIndexPtr(), sizeof(int) * (colsA+1), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_csrColInd, A.innerIndexPtr(), sizeof(int) * nnzA, cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_csrVal, A.valuePtr(), sizeof(double) * nnzA, cudaMemcpyHostToDevice));
+
+    double* d_b;
+    double* d_x;
+    double* h_x;
+
+    checkCudaErrors(cudaMalloc((void**)&d_b, sizeof(double) * colsA));
+    checkCudaErrors(cudaMalloc((void**)&d_x, sizeof(double) * colsA));
+    checkCudaErrors(cudaMemcpy(d_b, b.data(), sizeof(double) * colsA, cudaMemcpyHostToDevice));
+    h_x = (double*)malloc(sizeof(double) * colsA);
+    assert(NULL != h_x);
+
+    // set descrA
+    // ref1: https://docs.nvidia.com/cuda/cusparse/#cusparsecreatematdescr
+    // ref2: https://github.com/tpn/cuda-samples/blob/master/v8.0/7_CUDALibraries/cuSolverSp_LinearSolver/cuSolverSp_LinearSolver.cpp
+    cusparseMatDescr_t descrA = NULL;
+    cusparseCreateMatDescr(&descrA); 
+    cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL);
+    if(A.outerIndexPtr()[0]) cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ONE);
+    else cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ZERO);
+
+    // set solver handle
+    cusolverSpHandle_t cusolverSpH = NULL;
+    cusolverSpCreate(&cusolverSpH);
+
+    // set other parameter
+    int singularity = 0;
+    const double tol = 1.e-12;
+    int reorder = 0;
+
+
+    // ---------------- finish init ----------------
+   
+    cusolverSpDcsrlsvchol(cusolverSpH, colsA, nnzA, descrA, d_csrVal, d_csrRowPtr, d_csrColInd,
+        d_b, tol, reorder, d_x, &singularity);
+    cudaDeviceSynchronize();
+    
+    // ---------------- finish solve ----------------
+
+    // copy to host
+    cudaMemcpy(h_x, d_x, sizeof(double) * colsA, cudaMemcpyDeviceToHost);
+    x = Eigen::Map<Eigen::VectorXd>(h_x, colsA); // output
+
+    // free gpu memory
+    cusolverSpDestroy(cusolverSpH);
+    cusparseDestroyMatDescr(descrA);
+
+    cudaFree(d_csrVal);
+    cudaFree(d_csrRowPtr);
+    cudaFree(d_csrColInd);
+    cudaFree(d_b);
+    cudaFree(d_x);
+    free(h_x);
+}
 
 int main(int argc, char *argv[])
 {   
@@ -142,7 +226,9 @@ int main(int argc, char *argv[])
     double beta = 1.0e-3;
     Eigen::MatrixXd p = V;
     int iter = 0;
+
     auto start = std::chrono::high_resolution_clock::now();
+
     while(beta < beta_max){
         iter++;
         // build Laplacian operator
@@ -163,56 +249,13 @@ int main(int argc, char *argv[])
         A = A + beta * D.transpose() * D + alpha * R.transpose() * R;
         Eigen::MatrixXd b = V + beta * (D.transpose() * delta);
 
-
-        if(use_cholesky){
-            Eigen::SimplicialLLT<Eigen::SparseMatrix<double>> solver;
-            solver.analyzePattern(A);
-            solver.factorize(A);
-
-            if(solver.info() != Eigen::Success) {
-                std::cerr << "Cholesky decomposition failed" << std::endl;
-                use_cholesky = false;
-                std::cerr << "turn to LU" << std::endl;
-            }
-
-            if(use_cholesky){
-                for (int i = 0; i < b.cols(); ++i) {
-                    Eigen::VectorXd col_b = b.col(i);
-                    Eigen::VectorXd col_x = solver.solve(col_b);
-                    p.col(i) = col_x;
-                }
-
-                if(solver.info() != Eigen::Success) {
-                    std::cerr << "Cholesky solve failed" << std::endl;
-                    use_cholesky = false;
-                    std::cerr << "turn to LU" << std::endl;
-                }
-            }
+        // ---- use cuda solver ----
+        for (int i = 0; i < b.cols(); ++i) {
+            Eigen::VectorXd col_b = b.col(i);
+            Eigen::VectorXd col_x;
+            solveCholesky(A, col_b, col_x); 
+            p.col(i) = col_x;
         }
-
-        if(use_cholesky==false){
-            // use LU when cholesky encounters numerical problem
-            Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
-            solver.analyzePattern(A);
-            solver.factorize(A);
-
-            if(solver.info() != Eigen::Success) {
-                std::cerr << "LU decomposition failed" << std::endl;
-                return -1;
-            }
-
-            for (int i = 0; i < b.cols(); ++i) {
-                Eigen::VectorXd col_b = b.col(i);
-                Eigen::VectorXd col_x = solver.solve(col_b);
-                p.col(i) = col_x;
-            }
-
-            if(solver.info() != Eigen::Success) {
-                std::cerr << "LU solve failed" << std::endl;
-                return -1;
-            }
-        }
-
         // update parameter
         beta *= kappa;
         if(reg_decay) alpha *= 0.5;
