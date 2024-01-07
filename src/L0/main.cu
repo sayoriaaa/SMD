@@ -5,6 +5,7 @@
 #include "l0.hpp"
 #include <cusolverSp.h>
 #include <cusparse.h>
+#include "cusolverSp_LOWLEVEL_PREVIEW.h"
 
 #define checkCudaErrors(call)                                 \
   do {                                                        \
@@ -17,7 +18,7 @@
   } while (0)
 
 
-void solveCholesky(const Eigen::SparseMatrix<double> &A, const Eigen::VectorXd &b, Eigen::VectorXd &x){
+void cuSolver_warpper(const Eigen::SparseMatrix<double> &A, const Eigen::VectorXd &b, Eigen::VectorXd &x){
 // ref: https://stackoverflow.com/questions/57334742/convert-eigensparsematrix-to-cusparse-and-vice-versa
     const int nnzA = A.nonZeros();
     const int colsA = A.cols();
@@ -86,6 +87,131 @@ void solveCholesky(const Eigen::SparseMatrix<double> &A, const Eigen::VectorXd &
     cudaFree(d_b);
     cudaFree(d_x);
     free(h_x);
+}
+
+void Cholesky_lowLevel(const Eigen::SparseMatrix<double> &A, const Eigen::MatrixXd &b, Eigen::MatrixXd &p){
+
+    const int nnzA = A.nonZeros();
+    const int colsA = A.cols();
+
+    // create cuda sparse matrix A and cuda vector x
+    int* d_csrRowPtr;
+    int* d_csrColInd;       
+    double* d_csrVal;
+
+    checkCudaErrors(cudaMalloc((void**)&d_csrRowPtr, sizeof(int) * (colsA+1)));
+    checkCudaErrors(cudaMalloc((void**)&d_csrColInd, sizeof(int) * nnzA));
+    checkCudaErrors(cudaMalloc((void**)&d_csrVal, sizeof(double) * nnzA));
+
+    checkCudaErrors(cudaMemcpy(d_csrRowPtr, A.outerIndexPtr(), sizeof(int) * (colsA+1), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_csrColInd, A.innerIndexPtr(), sizeof(int) * nnzA, cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_csrVal, A.valuePtr(), sizeof(double) * nnzA, cudaMemcpyHostToDevice));
+
+    double* d_b;
+    double* d_x;
+    double* h_x;
+
+    checkCudaErrors(cudaMalloc((void**)&d_x, sizeof(double) * colsA));
+
+    h_x = (double*)malloc(sizeof(double) * colsA);
+    assert(NULL != h_x);
+
+    // set descrA
+    // ref1: https://docs.nvidia.com/cuda/cusparse/#cusparsecreatematdescr
+    // ref2: https://github.com/tpn/cuda-samples/blob/master/v8.0/7_CUDALibraries/cuSolverSp_LinearSolver/cuSolverSp_LinearSolver.cpp
+    cusparseMatDescr_t descrA = NULL;
+    cusparseCreateMatDescr(&descrA); 
+    cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL);
+    if(A.outerIndexPtr()[0]) cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ONE);
+    else cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ZERO);
+
+    // set solver handle
+    cusolverSpHandle_t cusolverSpH = NULL;
+    cusolverSpCreate(&cusolverSpH);
+
+    // set other parameter
+    int singularity = 0;
+    const double tol = 1.e-12;
+    int reorder = 0;
+
+    // --------------------------------------------
+    // --------------------------------------------
+    csrcholInfo_t d_info = NULL;
+    cusolverSpCreateCsrcholInfo(&d_info);
+    // analyze chol(A) to know structure of L
+    cusolverSpXcsrcholAnalysis(
+        cusolverSpH, colsA, nnzA,
+        descrA, d_csrRowPtr, d_csrColInd,
+        d_info);
+    //  workspace for chol(A)
+    size_t size_internal = 0; 
+    size_t size_chol = 0; // size of working space for csrlu
+    void *buffer_gpu = NULL; // working space for Cholesky
+
+    cusolverSpDcsrcholBufferInfo(
+        cusolverSpH, colsA, nnzA,
+        descrA, d_csrVal, d_csrRowPtr, d_csrColInd,
+        d_info,
+        &size_internal,
+        &size_chol);
+
+    checkCudaErrors(cudaMalloc(&buffer_gpu, sizeof(char)*size_chol));
+
+    // compute A = L*L^T
+    cusolverSpDcsrcholFactor(
+        cusolverSpH, colsA, nnzA,
+        descrA, d_csrVal, d_csrRowPtr, d_csrColInd,
+        d_info,
+        buffer_gpu);
+
+    /*
+    // Via test, There pack altogether speed up a little compared with separate
+    // Considering memory cost, we separate anyway.
+    int numCols = b.cols();
+    int numRows = b.rows();
+    int totalSize = numRows * numCols;
+    std::vector<double> flattenedData(totalSize);
+    for (int i = 0; i < numCols; ++i) {
+        Eigen::VectorXd col = b.col(i);
+        std::memcpy(flattenedData.data() + i * numRows, col.data(), sizeof(double) * numRows);
+    }
+    checkCudaErrors(cudaMalloc((void**)&d_b, sizeof(double) * totalSize));
+    cudaMemcpy(d_b, flattenedData.data(), sizeof(double) * totalSize, cudaMemcpyHostToDevice);
+    flattenedData.clear();
+    */
+    checkCudaErrors(cudaMalloc((void**)&d_b, sizeof(double) * colsA));
+    // solve A*x = b
+    for (int i = 0; i < b.cols(); ++i) {
+        Eigen::VectorXd col_b = b.col(i);
+        checkCudaErrors(cudaMemcpy(d_b, col_b.data(), sizeof(double) * colsA, cudaMemcpyHostToDevice));
+        cusolverSpDcsrcholSolve(
+            cusolverSpH, colsA, d_b, d_x, d_info, buffer_gpu);
+        cudaMemcpy(h_x, d_x, sizeof(double) * colsA, cudaMemcpyDeviceToHost);     
+        Eigen::VectorXd col_x = Eigen::Map<Eigen::VectorXd>(h_x, colsA); // output
+        p.col(i) = col_x;
+    }
+    // free gpu memory
+    cusolverSpDestroy(cusolverSpH);
+    cusparseDestroyMatDescr(descrA);
+
+    cusolverSpDestroyCsrcholInfo(d_info);
+    cudaFree(buffer_gpu);
+
+    cudaFree(d_csrVal);
+    cudaFree(d_csrRowPtr);
+    cudaFree(d_csrColInd);
+    cudaFree(d_b);
+    cudaFree(d_x);
+    free(h_x);
+}
+
+void Cholesky_highLevel(const Eigen::SparseMatrix<double> &A, const Eigen::MatrixXd &b, Eigen::MatrixXd &p){
+    for (int i = 0; i < b.cols(); ++i) {
+        Eigen::VectorXd col_b = b.col(i);
+        Eigen::VectorXd col_x;
+        cuSolver_warpper(A, col_b, col_x); 
+        p.col(i) = col_x;
+    }
 }
 
 int main(int argc, char *argv[])
@@ -250,12 +376,7 @@ int main(int argc, char *argv[])
         Eigen::MatrixXd b = V + beta * (D.transpose() * delta);
 
         // ---- use cuda solver ----
-        for (int i = 0; i < b.cols(); ++i) {
-            Eigen::VectorXd col_b = b.col(i);
-            Eigen::VectorXd col_x;
-            solveCholesky(A, col_b, col_x); 
-            p.col(i) = col_x;
-        }
+        Cholesky_lowLevel(A, b, p);
         // update parameter
         beta *= kappa;
         if(reg_decay) alpha *= 0.5;
