@@ -84,7 +84,7 @@ conda install -c conda-forge openmesh-python
 
 完成！ 
 
-你可以在`run/test_cube`下看到不同参数和拉普拉斯算子构造下$L_0$算法的降噪结果。
+你可以在`run/test_cube`下看到不同参数和拉普拉斯算子构造下$L_0$算法的降噪结果。其中log文件夹下包含了HQS迭代求解时中间过程的所有能量和对应的网格模型。
 
 再双击`bash/eval_cube.bat`
 
@@ -94,7 +94,7 @@ conda install -c conda-forge openmesh-python
 
 ### 一般使用
 
-`build/`下包含所有的可执行文件，使用`-h`获取帮助信息
+SMD使用[clipp](https://github.com/muellan/clipp)来解析命令行参数，`build/`下包含所有的可执行文件，只需要在命令行下输入可执行文件名称，即可获得该程序的使用信息。
 
 
 

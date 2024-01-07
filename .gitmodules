@@ -7,3 +7,6 @@
 [submodule "src/dependencies/eigen"]
 	path = src/dependencies/eigen
 	url = git@github.com:libigl/eigen.git
+[submodule "src/dependencies/clipp"]
+	path = src/dependencies/clipp
+	url = git@github.com:muellan/clipp.git
