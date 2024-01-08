@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
                 clipp::option("-e", "--edge").set(Laplacian_type, 1).doc("use edge-cotan-based Laplacian"),
                 clipp::option("-a", "--area").set(Laplacian_type, 2).doc("use edge-area-based Laplacian (default)"),
                 clipp::option("-rg", "--reg_decay").doc("paper suggests impact of regulation decreases in iteration \
-                    , therefore set as 0.5, however, we found this stragey produce less plesant result, 0 is recommended")
+                    , therefore set as 0.5, however, we found this stragey produce less plesant result, 1 is recommended")
                     & clipp::value("reg_decay", reg_decay),
                 clipp::option("--log").set(log).doc("save intermediate energy result and mesh in logfolder(without /)")
                     & clipp::value("logfolder", logfolder));
@@ -213,6 +213,7 @@ int main(int argc, char *argv[])
         if(Laplacian_type==0) igl::cotmatrix(p, F, D);
         else if(Laplacian_type==1) cotEdge_advance(p, edge_init, D);
         else if(Laplacian_type==2) cotEdgeArea_advance(p, edge_init, D);
+        if(use_regualtion) Regulation(p, edge_init, R);
         // local optimization
         Eigen::MatrixXd delta = D * p;
         for (int i = 0; i < delta.rows(); ++i) {

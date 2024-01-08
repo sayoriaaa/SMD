@@ -17,6 +17,6 @@ if exist "%CUDA_PATH%" (
     exit
 )
 
-nvcc -o L0cuda ../src/L0/main.cu  ../src/L0/l0.cc -I../src/dependencies/libigl/include -IC:/opt/eigen  -lcusparse -lcusolver -w
+nvcc -o L0cuda ../src/L0/main.cu  ../src/L0/l0.cc -I../src/dependencies/clipp/include -I../src/dependencies/libigl/include -IC:/opt/eigen  -lcusparse -lcusolver -w
 
 pause

@@ -8,7 +8,7 @@ l0 ../data/examples/cube7.obj ../run/test_cube/edge_lambda_6e-3.obj -e -l 0.006
 
 l0 ../data/examples/cube7.obj ../run/test_cube/area_lambda_6e-3.obj -a -l 0.006  --log ../run/test_cube/log0
 
-l0 ../data/examples/cube7.obj ../run/test_cube/area_lambda_6e-3_regualtion.obj -a -l 0.006 -r
+l0 ../data/examples/cube7.obj ../run/test_cube/area_lambda_6e-3_regualtion.obj -a -l 0.006 -r -rg 1
 
 l0 ../data/examples/cube7.obj ../run/test_cube/area_lambda_auto.obj  -a 
 
