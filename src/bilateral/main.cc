@@ -12,34 +12,64 @@
 #include <igl/per_vertex_normals.h>
 
 double gaussian_kernel(double t, double sigma){
-    return std::exp(-0.5 * std::pow(t/sigma,2));
+    return std::exp(t * t / (sigma * sigma) * -0.5 );
 }
 
-void find_neighbor(const Eigen::SparseMatrix<int>& A, const Eigen::MatrixXd& V, int vi, double radius, 
-                    std::vector<int>& neighbor) {
-    // i can't find related function in libigl, which is annoying
-    // but it just came to me that this is exactly bfs
-    int nums = A.rows();
-    std::queue<int> q;
-    std::vector<bool> visited(nums, false);
+void bilateral2003(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXd& p, int k_ring) {
+    Eigen::SparseMatrix<int> A; // adjacent matrix 
+    Eigen::MatrixXd N; // vertex normal
 
-    visited[vi] = true;
-    q.push(vi);
-    while (!q.empty())
-    {
-        int currentNode = q.front(); 
-        q.pop();
+    igl::adjacency_matrix(F, A); // suppose 1-ring neighbor
+    igl::per_vertex_normals(V, F, N);
+    //igl::per_vertex_normals(V, F, igl::PER_VERTEX_NORMALS_WEIGHTING_TYPE_AREA, N);
 
-        if((V.row(currentNode)-V.row(vi)).norm()<radius && currentNode!=vi) neighbor.push_back(currentNode);
-
-        for (typename Eigen::SparseMatrix<int>::InnerIterator it(A, currentNode); it; ++it) {
-            int vert_adj = it.row(); // eigen is column major
-            if((V.row(vert_adj)-V.row(vi)).norm()<radius && !visited[vert_adj]){
-                q.push(vert_adj); 
-                visited[vert_adj] = true;
-            }      
-        }
+    // calc k-ring adjacent matrix
+    Eigen::SparseMatrix<int> A_ref = A;// in case A is modified below
+    if(k_ring>1){
+        for(int i=0; i<k_ring-1; i++) A = A*A_ref;
     }
+ 
+    for (int vert = 0; vert < A.outerSize(); ++vert) {   
+        Eigen::VectorXd p_n = N.row(vert);
+        Eigen::VectorXd v_p = V.row(vert);
+
+        //  visit k-ring to set sigma_c
+        double sigma_c = 1e10;
+        for (Eigen::SparseMatrix<int>::InnerIterator it(A, vert); it; ++it) {
+            int vert_adj = it.row(); // eigen is column major
+            double dist = (V.row(vert)-V.row(vert_adj)).norm();
+            if(sigma_c>dist) sigma_c = dist;        
+        }
+        // radius set to 2*sigma_c, find sphere-inner points(aka neighbor)       
+        std::vector<int> neighbors;
+        for(int j=0; j<V.rows(); j++){
+            // if(i==j) continue; preserve vert itself helps robust
+            if((V.row(vert)-V.row(j)).norm()< 2*sigma_c ) neighbors.push_back(j);
+        }
+        Eigen::VectorXd offsets(neighbors.size());
+        for(int k=0; k<neighbors.size(); k++){
+            Eigen::VectorXd v_q = V.row(neighbors[k]);   
+            offsets(k) = std::abs((v_p - v_q).dot(p_n));
+        }
+   
+        double variance = (offsets.array() - offsets.mean()).square().sum() / neighbors.size();
+        double sigma_s = std::sqrt(variance);
+        // now all is ready, follow paper's pseudo-code
+        double sum = 0;
+        double normalizer = 0;
+        for(int vert_adj : neighbors){
+            Eigen::VectorXd vec = V.row(vert_adj)-V.row(vert);
+            double t = vec.norm();
+            double h = vec.dot(p_n);
+            double wc = gaussian_kernel(t, sigma_c);
+            double ws = gaussian_kernel(h, sigma_s);
+
+            sum += (wc * ws) * h;
+            normalizer += (wc * ws);
+        }
+        p.row(vert) = v_p + (sum/normalizer) * p_n;
+    }
+
 }
 
 
@@ -50,11 +80,14 @@ int main(int argc, char *argv[])
 
     double sigma_c, sigma_s;
     int k_ring = 1; // default 1-ring
+    int iter_num = 5;
 
     auto cli = (clipp::value("input file", infile),
                 clipp::value("output file", outfile),
                 clipp::option("-k", "--k_ring").doc("use k-ring information")
-                    & clipp::value("k_ring", k_ring)
+                    & clipp::value("k_ring", k_ring),
+                clipp::option("-i", "--iter").doc("iteration times")
+                    & clipp::value("iter_num", iter_num)  
                 );
 
     if(parse(argc, argv, cli)) {
@@ -67,77 +100,15 @@ int main(int argc, char *argv[])
 
     Eigen::MatrixXd V;
     Eigen::MatrixXi F;
-    Eigen::SparseMatrix<int> A; // adjacent matrix 
-    Eigen::MatrixXd N; // vertex normal
-
     // read mesh 
     igl::readOBJ(infile, V, F);
-    igl::adjacency_matrix(F, A); // suppose 1-ring neighbor
-    igl::per_vertex_normals(V, F, N);
-
     Eigen::MatrixXd p = V;
 
-    // calc k-ring adjacent matrix
-    Eigen::SparseMatrix<int> A_ref = A;// in case A is modified below
-    if(k_ring>1){
-        for(int i=0; i<k_ring-1; i++) A = A*A_ref;
-    }
+    auto start = std::chrono::high_resolution_clock::now();  
 
-    auto start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < A.outerSize(); ++i) {
-        //std::cout << i << std::endl;
-        int vert = i;
-        double sum = 0;
-        double normalizer = 0;
-
-        //  visit k-ring to set sigma_c
-        double sigma_c = -1;
-        for (typename Eigen::SparseMatrix<int>::InnerIterator it(A, i); it; ++it) {
-            int vert_adj = it.row(); // eigen is column major
-            double dist = (V.row(vert)-V.row(vert_adj)).norm();
-            if(sigma_c<dist) sigma_c = dist;        
-        }
-
-        // radius set to 2*sigma_c, find sphere-inner points(aka neighbor)
-        double radius = 2*sigma_c;
-        std::vector<int> neighbors;
-        find_neighbor(A_ref, V, vert, radius, neighbors);
-
-        //std::cout << "found " << neighbors.size() << "neighbor" << std::endl;
-
-        // visit its neighbor, calc size of neighbor and its average offset
-        double offset_avg = 0;
-        double sigma_s = 0;
-
-        for(int neighbor=0; neighbor < neighbors.size(); neighbor++){
-            double offset = std::abs((V.row(vert)-V.row(neighbors[neighbor])).dot(N.row(neighbors[neighbor])));
-            offset_avg += offset;
-        }
-        
-        if (neighbors.size()!=0) offset_avg /= neighbors.size();
-        // set sigma_s
-        for(int neighbor=0; neighbor < neighbors.size(); neighbor++){
-            double offset = std::abs((V.row(vert)-V.row(neighbors[neighbor])).dot(N.row(neighbors[neighbor])));
-            sigma_s += std::pow((offset-offset_avg),2);
-        }
-        if (neighbors.size()!=0) sigma_s /= neighbors.size();
-        sigma_s = std::sqrt(sigma_s);
-        if(sigma_s<1e-12) sigma_s+=1e-12;
-        sigma_s = sigma_s*2;
-
-        // now all is ready, follow paper's pseudo-code
-        for(int j=0; j<neighbors.size(); j++){
-            int vert_adj = neighbors[j];
-            double t = (V.row(vert)-V.row(vert_adj)).norm();
-            double h = (V.row(vert)-V.row(vert_adj)).dot(N.row(vert_adj));
-            double wc = gaussian_kernel(t, sigma_c);
-            double ws = gaussian_kernel(h, sigma_s);
-
-            sum += (wc * ws) * h;
-            normalizer += (wc * ws);
-        }
-        //std::cout  << "sum: " << sum << "normalizer: " << normalizer << std::endl;
-        p.row(vert) = V.row(vert) + N.row(vert) * (sum/normalizer);
+    for (int iter = 0; iter < iter_num; iter++){
+        bilateral2003(V, F, p, k_ring);
+        V = p;
     }
 
     auto end = std::chrono::high_resolution_clock::now();

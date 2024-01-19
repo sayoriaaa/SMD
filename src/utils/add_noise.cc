@@ -1,82 +1,76 @@
 #include <igl/read_triangle_mesh.h>
 #include <igl/writeOBJ.h>
 #include <igl/edge_lengths.h>
+#include <igl/per_vertex_normals.h>
+#include "clipp.h"
 #include <iostream>
 #include <random>
 
-Eigen::MatrixXd uniform(const Eigen::MatrixXd& V, double sigma) {
-    // X ~ U(-sigma, sigma)
-    Eigen::MatrixXd noise = sigma * Eigen::MatrixXd::Random(V.rows(), V.cols());
-    return noise;
+void genDirection(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXd& direction, bool use_normal_direction) {
+    if (use_normal_direction){
+        igl::per_vertex_normals(V, F, direction);
+    }
+    else {
+        direction = Eigen::MatrixXd::Random(V.rows(), V.cols());
+        for (int i = 0; i<direction.rows(); i++){
+            direction.row(i).normalize();
+        }
+    }
 }
 
-Eigen::MatrixXd gaussian(const Eigen::MatrixXd& V, double sigma) {
-    // X ~ U(-sigma, sigma)
-    Eigen::MatrixXd noise = Eigen::MatrixXd::Zero(V.rows(), V.cols());
-    for(int i=0; i<4; i++){
-        noise += uniform(V, sigma);
+void genNoise(Eigen::MatrixXd& noise, double sigma, int noise_type = 0) {
+    // assuming input 'noise' is the direction
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    if (noise_type==0){
+        // uniform
+        std::uniform_real_distribution<double> distribution(0.0, sigma);
+        for (int i = 0; i<noise.rows(); i++){
+            double val = distribution(gen);
+            noise.row(i) = noise.row(i) * val;
+        }
     }
-    noise *= 0.25;
-    return noise;
+    if (noise_type==1){
+        // gaussiam
+       std::normal_distribution<double> distribution(0, sigma);
+        for (int i = 0; i<noise.rows(); i++){
+            double val = distribution(gen);
+            noise.row(i) = noise.row(i) * val;
+        }
+    }
+
 }
 
 int main(int argc, char *argv[])
 {   
     double factor = 0.3;
-    bool showHelp = false;
     bool impulsive = false;
-    int type = 0;
+    double impulsive_range = 0.1;
+    double impulsive_strength = 0.7;
+    int noise_type = 0;
+    bool use_normal_direction = false;
 
-    std::string inputFile, outputFile;
+    std::string infile = "";
+    std::string outfile = "";
 
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg == "-f" || arg == "--factor") {
-            if (i + 1 < argc) {
-                factor = std::stod(argv[i + 1]);
-                i++; // Skip the next argument (number)
-            } else {
-                std::cerr << "-f, --factor requires an argument." << std::endl;
-                return 1;
-            }
-        } else if (arg == "-i" || arg == "--input") {
-            if (i + 1 < argc) {
-                inputFile = argv[i + 1];
-                i++; // Skip the next argument (file name)
-            } else {
-                std::cerr << "-i, --input requires an argument." << std::endl;
-                return 1;
-            }
-        } else if (arg == "-o" || arg == "--output") {
-            if (i + 1 < argc) {
-                outputFile = argv[i + 1];
-                i++; // Skip the next argument (file name)
-            } else {
-                std::cerr << "-o, --output requires an argument." << std::endl;
-                return 1;
-            }
-        } else if (arg == "-u" || arg == "--uniform") {
-            type = 1;
-        } else if (arg == "-g" || arg == "--gaussian") {
-            type = 0;
-        } else if (arg == "-h" || arg == "--help") {
-            showHelp = true;
-        }
-        else if (arg == "--impulsive") {
-            impulsive = true;
-        }
-    }
 
-    if (showHelp) {
-        std::cout << "Usage: " << argv[0] << " [options]\n"
-                  << "Options:\n"
-                  << "  -i, --input <file>  Input file\n"
-                  << "  -o, --output <file>  Output file\n"
-                  << "  -f, --factor <number> set sigma as f*average edge length\n"
-                  << "  -g, --gaussian use gaussian noise\n"
-                  << "  -u, --uniform use uniform noise\n"
-                  ;
-        return 0;
+    auto cli = (clipp::value("input file", infile),
+                clipp::value("output file", outfile),
+                clipp::option("-f", "--factor").doc("set sigma as factor * average_edge_length")
+                    & clipp::value("factor", factor),
+                clipp::option("-u", "--uniform").doc("use noise of normal distrbution").set(noise_type, 0),
+                clipp::option("-g", "--gaussian").doc("use noise of gaussian distrbution").set(noise_type, 1),
+                clipp::option("-i", "--impulsive").set(impulsive).doc("add additional impulsive noise"),
+                clipp::option("--set_impulsive_range").doc("set impulsive noise's range (default 0.1 of all points)")
+                    & clipp::value("impulsive_range", impulsive_range),
+                clipp::option("--set_impulsive_strength").doc("set impulsive noise's strength (default 0.7 of its devation)")
+                    & clipp::value("impulsive_strength", impulsive_strength),
+                clipp::option("-n", "--normal_direction").set(use_normal_direction).doc("use normal direction as noise direction (default RANDOM)"));
+
+    if(parse(argc, argv, cli)) { std::cout << "SMD: add noise" << std::endl; }
+    else{
+        std::cout << make_man_page(cli, "noise");
+        return -1;
     }
 
     // end parsing
@@ -86,18 +80,22 @@ int main(int argc, char *argv[])
     Eigen::MatrixXd L;
 
     // read mesh  
-    igl::read_triangle_mesh(inputFile, V, F);   
+    igl::read_triangle_mesh(infile, V, F);   
     igl::edge_lengths(V, F, L);
 
     // calc average edge length
     double average_length = L.mean();
     std::cout << "Average edge length: " << average_length << std::endl;
 
-    // build noise matrix (avoid the usage of for)
+    // build direction matrix 
     Eigen::MatrixXd noise;
+    genDirection(V, F, noise, use_normal_direction);
+
+    // build noise matrix 
     double sigma = average_length * factor;
-    if(type==0) noise = uniform(V, sigma);
-    else if(type==1) noise = gaussian(V, sigma);
+    genNoise(noise, sigma, noise_type);
+
+
     // add impulsive
     if(impulsive){
         // radom select vert to apply
@@ -105,12 +103,12 @@ int main(int argc, char *argv[])
         std::mt19937 gen(rd());
         std::uniform_int_distribution<> dis(0, V.rows() - 1);
 
-        for(int i=0; i<int(V.rows()*factor); i++){ // apply to factor percent vert
-            noise.row(dis(gen)) *= (1+factor); // with factor percent strength
+        for(int i=0; i<int(V.rows() * impulsive_range); i++){ // apply to factor percent vert
+            noise.row(dis(gen)) *= (1 + impulsive_strength); // with factor percent strength
         }
     }
     // add noise
     V += noise;
-    igl::writeOBJ(outputFile, V, F);
+    igl::writeOBJ(outfile, V, F);
 
 }
