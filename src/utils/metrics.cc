@@ -1,3 +1,5 @@
+#include "clipp.h"
+#include <fstream>
 #include <Eigen/Dense>
 #include <igl/point_mesh_squared_distance.h>
 #include <igl/bounding_box_diagonal.h>
@@ -41,7 +43,9 @@ double AAD(const Eigen::MatrixXd& VA, const Eigen::MatrixXd& VB, const Eigen::Ma
     return ret;
 }
 
-double E3(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F) {
+
+double OEP(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F) {
+    // over-flipped edge percentage
     // inspired by he L0 2013
     using namespace Eigen;
     double ret;
@@ -80,60 +84,66 @@ double E3(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F) {
 
 int main(int argc, char *argv[])
 {   
-    double factor = 0.3;
-    bool showHelp = false;
-    bool impulsive = false;
-    int type = 0;
 
-    std::string inputFile, gtFile;
+    std::string infile = "";
+    std::string infile_gt = "";
+    std::string logfile = "";
+    bool use_ahd = false;
+    bool use_aad = false;
+    bool use_oep = false;
+    bool use_log = false;
 
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg == "-i" || arg == "--input") {
-            if (i + 1 < argc) {
-                inputFile = argv[i + 1];
-                i++; // Skip the next argument (file name)
-            } else {
-                std::cerr << "-i, --input requires an argument." << std::endl;
-                return 1;
-            }
-        } else if (arg == "-g" || arg == "--gt") {
-            if (i + 1 < argc) {
-                gtFile = argv[i + 1];
-                i++; // Skip the next argument (file name)
-            } else {
-                std::cerr << "-g, --gt requires an argument." << std::endl;
-                return 1;
-            }
-        } 
+
+    auto cli = (clipp::value("input file", infile),
+                clipp::option("--gt_file").doc("file of reference(GT) mesh")
+                    & clipp::value("infile_gt", infile_gt), 
+                clipp::option("--ahd").set(use_ahd).doc("average Hausdorff distance"),
+                clipp::option("--aad").set(use_aad).doc("average normal angular (degree)"),
+                clipp::option("--oep").set(use_oep).doc("over-flipped edge percentage"),
+                clipp::option("--logfile").set(use_log).doc("enable log, specily log file")
+                    & clipp::value("logfile", logfile) 
+                );
+
+    if(parse(argc, argv, cli)) {
+        std::cout << "SMD-L0: Metrics" << std::endl;
     }
-
-    if (showHelp) {
-        std::cout << "Usage: " << argv[0] << " [options]\n"
-                  << "Options:\n"
-                  << "  -i, --input <file>  Input file\n"
-                  << "  -g, --gt <file>  Output file\n"
-                  ;
-        return 0;
+    else{
+        std::cout << make_man_page(cli, "Metrics");
+        return -1;
     }
-
     // end parsing
 
     Eigen::MatrixXd VA, VB;
     Eigen::MatrixXi FA, FB;
-    double hausdorff, aad, e3;
-
+    
+    // log 
+    std::ofstream file;
+    if (use_log) file.open(logfile);
 
     // read mesh 
-    igl::read_triangle_mesh(inputFile, VA, FA);
-    igl::read_triangle_mesh( gtFile, VB, FB);
- 
-    
-    hausdorff = AHD(VA, VB, FA);
-    aad = AAD(VA, VB, FA);
-    e3 = E3(VA, FA);
-    std::cout << "AHD:" << hausdorff << std::endl;
-    std::cout << "AAD:" << aad << std::endl;
-    std::cout << "E3:" << e3 << std::endl;
+    igl::read_triangle_mesh(infile, VA, FA);
+    if (infile_gt != ""){
+        igl::read_triangle_mesh( infile_gt, VB, FB);
+    }
+
+    if(use_aad){
+        assert(infile_gt != "");
+        double aad = AAD(VA, VB, FA);
+        std::cout << "AAD:" << aad << std::endl;
+        if(use_log) file << aad << std::endl;
+    }
+    if(use_aad){
+        assert(infile_gt != "");
+        double ahd = AHD(VA, VB, FA);
+        std::cout << "AHD:" << ahd << std::endl;
+        if(use_log) file << ahd << std::endl;
+    }
+    if(use_oep){
+        double oep = OEP(VA, FA);
+        std::cout << "OEP:" << oep << std::endl;
+        if(use_log) file << oep << std::endl;
+    }  
+
+    if(use_log) file.close();  
 
 }

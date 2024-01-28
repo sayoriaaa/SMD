@@ -12,3 +12,5 @@ bash/*
 !bash/test_cube.bat
 !bash/eval_cube.bat
 !bash/cuda.bat
+
+scripts/__pycache__

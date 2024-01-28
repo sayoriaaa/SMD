@@ -20,7 +20,7 @@ SMD-lab旨在提供一个跨平台、开箱即用的保特征网格降噪算法�
 | [(SIGGRAPH'13) Mesh denoising via *L*0 minimization](https://dl.acm.org/doi/10.1145/2461912.2461965) | [(SIGGRAPH'14) Decoupling Noises and Features via Weighted *l*1-analysis Compressed Sensing](http://staff.ustc.edu.cn/~lgliu/Projects/2014_DecouplingNoise/default.htm) | [(Pacific Graphics'18) Non-Local Low-Rank Normal Filtering for Mesh Denoising](https://onlinelibrary.wiley.com/doi/abs/10.1111/cgf.13556) | [(SIGGRAPH'03) Bilateral mesh denoising](https://dl.acm.org/doi/10.1145/882262.882368) |
 |                                                              |                                                              |                                                              | [(TVCG'11) Bilateral Normal Filtering for Mesh Denoising](https://dl.acm.org/doi/10.1109/TVCG.2010.264) |
 
-该项目正在持续编写中，目前已完成了$L_0$算法的所有细节和优化（正在进行cuda实现的优化）;基于压缩感知的降噪算法正在复现中，已完成了$C^2$连续网格的降噪，目前正在研究SOCP优化的求解。
+该项目正在持续编写中，已复现的算法可以查看[图](###hello world!)
 
 ## 使用
 
@@ -42,15 +42,14 @@ x86 is for 32bit
 
 ### 创建python环境 (可选)
 
-在执行大型数据集的测试任务时，我们使用python脚本来实现文件路径变更、模型格式转换、执行信息统计等任务，因此需要创建python环境
+我们使用python脚本来实现数据统计、可视化等任务
 
 ```
 conda create -n SMD python=3.8
 conda activate SMD
 conda install -c conda-forge openmesh-python
+pip install pyvista
 ```
-
-虽然这部分我们也可以全部通过C++和shell编程实现，但是会比较麻烦需要写一堆轮子。在这里作为测试辅助使用python并不会影响算法性能的评估。
 
 ## 项目文件说明
 
@@ -62,8 +61,9 @@ conda install -c conda-forge openmesh-python
 - `data/` 数据集
   - `thingi10K/` （需下载）
   - `printobject/` （需下载）
+  - ...
   - `examples/`  
-
+  
 - `bash/`
   - `*.bat` win下的任务
   - `*.sh` linux下的任务
@@ -78,19 +78,21 @@ conda install -c conda-forge openmesh-python
 
 ## 运行
 
-### hello word!
+### hello world!
 
 在windows下，双击`bash/test_cube.bat` 
 
-完成！ 
+完成！ 你可以在当前命令行窗口看到这些算法的执行时间，以及对应降噪结果的不同指标（详细内容参见[降噪结果评估](#降噪结果评估)）你可以在`run/test_cube`下看到不同算法和不同参数的降噪结果。其中log文件夹下包含了HQS迭代求解时中间过程的所有能量和对应的网格模型。
 
-你可以在`run/test_cube`下看到不同参数和拉普拉斯算子构造下$L_0$算法的降噪结果。其中log文件夹下包含了HQS迭代求解时中间过程的所有能量和对应的网格模型。
+接下来，通过执行`scripts/cube_vis.py`，可以生成以下的可视化结果:
 
-再双击`bash/eval_cube.bat`
+各种算法对含$\sigma=0.7l_e$高斯噪声的网格的降噪结果，可视化为法向差异（$\degree$为单位）
 
-你可以在命令行看到各种降噪结果的不同指标，详细内容参见[降噪结果评估](#降噪结果评估)
+![](imgs/gallery.png)
 
+L0算法在迭代过程中的变化
 
+![](imgs/L0-area-iter.png)
 
 ### 一般使用
 
@@ -207,7 +209,7 @@ $$
 
 结果以角度为单位
 
-### E3
+### 翻折边比例（OEP）
 
 基于$L_0$论文中folded triangle的可视化，使用边所对应的二面角进行网格评估，给出一个定量度量
 $$
@@ -234,6 +236,8 @@ $$
 
 
 TODO:
+
+TVCG11的全局方法、面-shared-vertex-面的查询
 
 Thingi10K(a) 使用`lib::read_triangle_mesh`直接读取stl添加噪声（结果不对）
 
