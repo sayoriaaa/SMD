@@ -15,7 +15,40 @@ double gaussian_kernel(double t, double sigma){
     return std::exp(t * t / (sigma * sigma) * -0.5 );
 }
 
-void bilateral2003(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXd& p, int k_ring) {
+void find_neighbor(const Eigen::SparseMatrix<int>& A, const Eigen::MatrixXd& V, std::vector<int>& neighbor, int vi, double radius) {
+    // i can't find related function in libigl, which is annoying
+    // but it just came to me that this is exactly bfs
+    int nums = A.rows();
+    std::queue<int> q;
+    std::vector<bool> visited(nums, false);
+
+    visited[vi] = true;
+    q.push(vi);
+    while (!q.empty())
+    {
+        int currentNode = q.front(); 
+        q.pop();
+
+        if((V.row(currentNode)-V.row(vi)).norm()<radius && currentNode!=vi) neighbor.push_back(currentNode);
+
+        for (Eigen::SparseMatrix<int>::InnerIterator it(A, currentNode); it; ++it) {
+            int vert_adj = it.row(); // eigen is column major
+            if((!visited[vert_adj]) && (V.row(vert_adj)-V.row(vi)).norm()<radius ){
+                q.push(vert_adj); 
+                visited[vert_adj] = true;
+            }      
+        }
+    }
+}
+
+void find_neighbor(const Eigen::MatrixXd& V, std::vector<int>& neighbors,int vi, double radius){
+    for(int j=0; j<V.rows(); j++){
+        // if(i==j) continue; preserve vert itself helps robust
+        if((V.row(vi)-V.row(j)).norm()< radius) neighbors.push_back(j);
+    }
+}
+
+void bilateral2003(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXd& p, int k_ring, bool use_global_search) {
     Eigen::SparseMatrix<int> A; // adjacent matrix 
     Eigen::MatrixXd N; // vertex normal
 
@@ -42,6 +75,8 @@ void bilateral2003(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::Ma
         }
         // radius set to 2*sigma_c, find sphere-inner points(aka neighbor)       
         std::vector<int> neighbors;
+        if(use_global_search) find_neighbor(V, neighbors, vert, 2*sigma_c);
+        else find_neighbor(A_ref, V, neighbors, vert, 2*sigma_c);
         for(int j=0; j<V.rows(); j++){
             // if(i==j) continue; preserve vert itself helps robust
             if((V.row(vert)-V.row(j)).norm()< 2*sigma_c ) neighbors.push_back(j);
@@ -81,13 +116,15 @@ int main(int argc, char *argv[])
     double sigma_c, sigma_s;
     int k_ring = 1; // default 1-ring
     int iter_num = 5;
+    bool use_global_search = false;
 
     auto cli = (clipp::value("input file", infile),
                 clipp::value("output file", outfile),
                 clipp::option("-k", "--k_ring").doc("use k-ring information")
                     & clipp::value("k_ring", k_ring),
                 clipp::option("-i", "--iter").doc("iteration times")
-                    & clipp::value("iter_num", iter_num)  
+                    & clipp::value("iter_num", iter_num),
+                clipp::option("--global_search").set(use_global_search).doc("use brute-force search to find neighborhoods")      
                 );
 
     if(parse(argc, argv, cli)) {
@@ -107,7 +144,7 @@ int main(int argc, char *argv[])
     auto start = std::chrono::high_resolution_clock::now();  
 
     for (int iter = 0; iter < iter_num; iter++){
-        bilateral2003(V, F, p, k_ring);
+        bilateral2003(V, F, p, k_ring, use_global_search);
         V = p;
     }
 
