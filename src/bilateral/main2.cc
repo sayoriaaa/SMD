@@ -60,17 +60,50 @@ void update_vertex(const Eigen::MatrixXd& V,
     }
 }
 
+void facet_adjacency_matrix_v(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::SparseMatrix<int>& A){
+    // share a vertex
+    const int VN = 10; // assuming each vertex has maxinum VN vertex neighbor
+    Eigen::MatrixXi temp = Eigen::MatrixXi::Zero(V.rows(), VN);
+    Eigen::VectorXi temp_size = Eigen::VectorXi::Zero(V.rows());
+
+    for(int facet=0; facet<F.rows(); facet++){
+        for(int j=0; j<3; j++){
+            int vert = F(facet,j);
+            temp(vert, temp_size(vert)) = facet;
+            temp_size(vert) += 1;
+        }
+    }
+
+    // write to sparse matrix
+    A.resize(F.rows(),F.rows());
+    A.reserve(VN*V.rows()); 
+
+    std::vector<Eigen::Triplet<int> > tripletList;
+    for(int i=0; i<temp.rows(); i++){
+        for(int j=0; j<temp_size(i); j++){
+            int facet1 = temp(i, j);
+            for(int k=0; k<temp_size(i); k++){
+                int facet2 = temp(i, k);
+                tripletList.push_back(Eigen::Triplet<int> (facet1, facet2, 1));
+            }       
+        }
+    }
+    A.setFromTriplets(tripletList.begin(), tripletList.end());
+}
+
 void bilateral2011(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXd& p,
                     int max_iter = 1,
                     int update_max_iter = 20,
                     double sigma_c = 0.,
-                    double sigma_s = 0.2) {
+                    double sigma_s = 0.2,
+                    bool use_vertex_neighbor = false) {
     Eigen::SparseMatrix<int> A; // facet adjacent matrix 
     Eigen::MatrixXd N; // facet normal
     Eigen::MatrixXd C = Eigen::MatrixXd::Zero(F.rows(), 3); // centroids of facet
     Eigen::MatrixXd dbA; // double area of facet
 
-    igl::facet_adjacency_matrix(F, A);
+    if(use_vertex_neighbor) facet_adjacency_matrix_v(V, F, A);
+    else igl::facet_adjacency_matrix(F, A);
     igl::per_face_normals(V, F, N);
     center(V, F, C);
     igl::doublearea(V, F, dbA);
@@ -131,6 +164,7 @@ int main(int argc, char *argv[])
     double sigma_c = 0., sigma_s = 0.2;
     int iter_num = 1;
     int vupdate_iter_num = 20;
+    bool use_vertex_neighbor = false;
 
     auto cli = (clipp::value("input file", infile),
                 clipp::value("output file", outfile),
@@ -141,7 +175,8 @@ int main(int argc, char *argv[])
                 clipp::option("-i", "--iter").doc("iteration times used for normal filtering")
                     & clipp::value("iter_num", iter_num), 
                 clipp::option("--update_iter").doc("iteration times used for vertex update")
-                    & clipp::value("vupdate_iter_num", vupdate_iter_num) 
+                    & clipp::value("vupdate_iter_num", vupdate_iter_num),
+                clipp::option("--vn").set(use_vertex_neighbor).doc("use vertex based neighbor (good on CAD) instead of edge based")
                 );
 
     if(parse(argc, argv, cli)) {
@@ -160,7 +195,7 @@ int main(int argc, char *argv[])
 
     auto start = std::chrono::high_resolution_clock::now();  
 
-    bilateral2011(V, F, p, iter_num, vupdate_iter_num, sigma_c, sigma_s);
+    bilateral2011(V, F, p, iter_num, vupdate_iter_num, sigma_c, sigma_s, use_vertex_neighbor);
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> duration = end - start;
