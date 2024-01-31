@@ -17,8 +17,9 @@ SMD-lab旨在提供一个跨平台、开箱即用的保特征网格降噪算法�
 
 | $L_0$优化                                                    | 压缩感知                                                     | 低秩分解                                                     | 滤波                                                         |
 | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| [(SIGGRAPH'13) Mesh denoising via *L*0 minimization](https://dl.acm.org/doi/10.1145/2461912.2461965) | [(SIGGRAPH'14) Decoupling Noises and Features via Weighted *l*1-analysis Compressed Sensing](http://staff.ustc.edu.cn/~lgliu/Projects/2014_DecouplingNoise/default.htm) | [(Pacific Graphics'18) Non-Local Low-Rank Normal Filtering for Mesh Denoising](https://onlinelibrary.wiley.com/doi/abs/10.1111/cgf.13556) | [(SIGGRAPH'03) Bilateral mesh denoising](https://dl.acm.org/doi/10.1145/882262.882368) |
+| [(SIGGRAPH'13) Mesh denoising via *L*0 minimization](https://dl.acm.org/doi/10.1145/2461912.2461965) | [(SIGGRAPH'14) Decoupling Noises and Features via Weighted *l*1-analysis Compressed Sensing](http://staff.ustc.edu.cn/~lgliu/Projects/2014_DecouplingNoise/default.htm) | [(Proc. PG'18) Non-Local Low-Rank Normal Filtering for Mesh Denoising](https://onlinelibrary.wiley.com/doi/abs/10.1111/cgf.13556) | [(SIGGRAPH'03) Bilateral mesh denoising](https://dl.acm.org/doi/10.1145/882262.882368) |
 |                                                              |                                                              |                                                              | [(TVCG'11) Bilateral Normal Filtering for Mesh Denoising](https://dl.acm.org/doi/10.1109/TVCG.2010.264) |
+|                                                              |                                                              |                                                              | [(Proc. PG'15) Guided Mesh Normal Filtering](http://staff.ustc.edu.cn/~juyong/GuidedFilter.html) |
 
 该项目正在持续编写中，已复现的算法可以查看[图](###hello world!)
 
@@ -237,7 +238,7 @@ $$
 
 TODO:
 
-TVCG11的全局方法、面-shared-vertex-面的查询
+TVCG11的全局方法未实现、guide norm filtering的方法待验证
 
 Thingi10K(a) 使用`lib::read_triangle_mesh`直接读取stl添加噪声（结果不对）
 

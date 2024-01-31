@@ -82,7 +82,7 @@ void facet_adjacency_matrix_v(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F
     for(int i=0; i<temp.rows(); i++){
         for(int j=0; j<temp_size(i); j++){
             int facet1 = temp(i, j);
-            for(int k=0; k<temp_size(i); k++){
+            for(int k=0; k<temp_size(i); k++){ // self must be included to clac matrics
                 int facet2 = temp(i, k);
                 tripletList.push_back(Eigen::Triplet<int> (facet1, facet2, 1));
             }       
@@ -91,22 +91,95 @@ void facet_adjacency_matrix_v(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F
     A.setFromTriplets(tripletList.begin(), tripletList.end());
 }
 
-void bilateral2011(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXd& p,
+void get_patch(const Eigen::MatrixXd& V, 
+                const Eigen::MatrixXd& N, 
+                const Eigen::SparseMatrix<int>& A, 
+                Eigen::VectorXd& patch_metric, Eigen::MatrixXd& patch_norm){
+
+    patch_metric = Eigen::VectorXd::Zero(N.rows());
+    patch_norm = Eigen::MatrixXd::Zero(N.rows(), 3);
+    for (int facet = 0; facet < A.outerSize(); ++facet) {
+        // build each facet's patch
+        std::vector<int> patch;
+        Eigen::Vector3d mean_norm = Eigen::Vector3d::Zero();
+        double metric1 = -1;
+        double metric2 = 0;
+        double tv_sum = 0;
+        double tv_max = -1;
+
+        for (Eigen::SparseMatrix<int>::InnerIterator it(A, facet); it; ++it) {
+            patch.push_back(it.row());
+            Eigen::Vector3d facet_norm = N.row(it.row());
+            mean_norm = mean_norm + facet_norm;
+        }
+        for (int i=0; i<3; i++){
+            mean_norm(i) = mean_norm(i) / patch.size();
+        }
+
+        for(int i=0; i<patch.size(); i++){
+            for(int j=i+1; j<patch.size(); j++){
+                int f1 = patch[i];
+                int f2 = patch[j];
+
+                // metric1
+                double diff = (N.row(f1)-N.row(f2)).norm();
+                if (metric1 < diff) metric1 = diff;
+
+                // metric2
+                if (A.coeff(f1, f2) == 2) {
+                    // meet non-boundary edge
+                    if (tv_max < diff) tv_max = diff;
+                    tv_sum += diff;
+                }
+
+            }
+        }
+
+        metric2 = tv_max / (tv_sum + 1e-9);
+        patch_metric(facet) = metric1 * metric2;
+        patch_norm.row(facet) = mean_norm;
+    }
+}
+
+void get_guide(const Eigen::VectorXd& patch_metric, const Eigen::MatrixXd& patch_norm, Eigen::SparseMatrix<int>& A,
+                Eigen::MatrixXd& guide_norm){
+    guide_norm = Eigen::MatrixXd::Zero(patch_norm.rows(), 3);
+    for (int facet = 0; facet < A.outerSize(); ++facet) {
+        // build each facet's guide norm
+        int best_idx = 0;
+        int best_metric = -1;
+        for (Eigen::SparseMatrix<int>::InnerIterator it(A, facet); it; ++it) {
+            int patch = it.row();
+            if (patch_metric(patch) > best_metric){
+                best_metric = patch_metric(patch);
+                best_idx = patch;
+            }      
+        }
+        guide_norm.row(facet) = patch_norm.row(best_idx);
+    }
+}
+
+void bilateral_guide(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXd& p,
                     int max_iter = 1,
                     int update_max_iter = 20,
                     double sigma_c = 0.,
-                    double sigma_s = 0.2,
-                    bool use_vertex_neighbor = false) {
+                    double sigma_s = 0.2) {
     Eigen::SparseMatrix<int> A; // facet adjacent matrix 
     Eigen::MatrixXd N; // facet normal
     Eigen::MatrixXd C = Eigen::MatrixXd::Zero(F.rows(), 3); // centroids of facet
     Eigen::MatrixXd dbA; // double area of facet
 
-    if(use_vertex_neighbor) facet_adjacency_matrix_v(V, F, A);
-    else igl::facet_adjacency_matrix(F, A);
+    facet_adjacency_matrix_v(V, F, A);
     igl::per_face_normals(V, F, N);
     center(V, F, C);
     igl::doublearea(V, F, dbA);
+
+    // guide norm
+    Eigen::MatrixXd patch_norm; // mean patch normal
+    Eigen::VectorXd patch_metric;
+    Eigen::MatrixXd GN;
+    get_patch(V, N, A, patch_metric, patch_norm);
+    get_guide(patch_metric, patch_norm, A, GN);
 
     if (sigma_c == 0.){
         // if not user specified, use paper setting
@@ -136,13 +209,13 @@ void bilateral2011(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::Ma
             for (Eigen::SparseMatrix<int>::InnerIterator it(A, facet); it; ++it) {
                 int facet_adj = it.row(); // eigen is column major
                 double c_d = (C.row(facet)-C.row(facet_adj)).norm();
-                double n_d = (N.row(facet)-N.row(facet_adj)).norm();
+                double n_d = (GN.row(facet)-GN.row(facet_adj)).norm();
                 double w_c = gaussian_kernel(c_d, sigma_c);
                 double w_s = gaussian_kernel(n_d, sigma_s);
 
                 double weight = dbA(facet_adj) * 0.5 * w_s * w_c; 
                 weight_sum += weight;
-                Eigen::Vector3d norm = N.row(facet_adj); // cannot directly use in nextline!
+                Eigen::Vector3d norm = GN.row(facet_adj); // cannot directly use in nextline!
                 f_n = f_n + weight * norm;
             }
             f_n = f_n / weight_sum;
@@ -164,7 +237,6 @@ int main(int argc, char *argv[])
     double sigma_c = 0., sigma_s = 0.2;
     int iter_num = 1;
     int vupdate_iter_num = 20;
-    bool use_vertex_neighbor = false;
 
     auto cli = (clipp::value("input file", infile),
                 clipp::value("output file", outfile),
@@ -175,15 +247,14 @@ int main(int argc, char *argv[])
                 clipp::option("-i", "--iter").doc("iteration times used for normal filtering")
                     & clipp::value("iter_num", iter_num), 
                 clipp::option("--update_iter").doc("iteration times used for vertex update")
-                    & clipp::value("vupdate_iter_num", vupdate_iter_num),
-                clipp::option("--vn").set(use_vertex_neighbor).doc("use vertex based neighbor (good on CAD) instead of edge based")
+                    & clipp::value("vupdate_iter_num", vupdate_iter_num)
                 );
 
     if(parse(argc, argv, cli)) {
-        std::cout << "SMD-bilateral: C++ implementation of \"Bilateral Normal Filtering for Mesh Denoising\" " << std::endl;
+        std::cout << "SMD-bilateral: C++ implementation of \"Guided Mesh Normal Filtering\" " << std::endl;
     }
     else{
-        std::cout << make_man_page(cli, "bilateral-norm");
+        std::cout << make_man_page(cli, "bilateral-guide");
         return -1;
     }
 
@@ -195,7 +266,7 @@ int main(int argc, char *argv[])
 
     auto start = std::chrono::high_resolution_clock::now();  
 
-    bilateral2011(V, F, p, iter_num, vupdate_iter_num, sigma_c, sigma_s, use_vertex_neighbor);
+    bilateral_guide(V, F, p, iter_num, vupdate_iter_num, sigma_c, sigma_s);
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> duration = end - start;
