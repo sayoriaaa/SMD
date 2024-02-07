@@ -128,6 +128,7 @@ void get_patch(const Eigen::MatrixXd& V,
                 // metric2
                 if (A.coeff(f1, f2) == 2) {
                     // meet non-boundary edge
+                    //std::cout << "meet non-boundary edge " << f1 << " " << f2 << std::endl;
                     if (tv_max < diff) tv_max = diff;
                     tv_sum += diff;
                 }
@@ -147,7 +148,26 @@ void get_guide(const Eigen::VectorXd& patch_metric, const Eigen::MatrixXd& patch
     for (int facet = 0; facet < A.outerSize(); ++facet) {
         // build each facet's guide norm
         int best_idx = 0;
-        int best_metric = -1;
+        double best_metric = 1e10;
+        for (Eigen::SparseMatrix<int>::InnerIterator it(A, facet); it; ++it) {
+            int patch = it.row();
+            if (patch_metric(patch) < best_metric){
+                best_metric = patch_metric(patch);
+                best_idx = patch;
+            }      
+        }
+        guide_norm.row(facet) = patch_norm.row(best_idx);
+    }
+}
+
+void get_guide_worst(const Eigen::VectorXd& patch_metric, const Eigen::MatrixXd& patch_norm, Eigen::SparseMatrix<int>& A,
+                Eigen::MatrixXd& guide_norm){
+    // choose worst patch, only to validate the patch selection metric, 
+    guide_norm = Eigen::MatrixXd::Zero(patch_norm.rows(), 3);
+    for (int facet = 0; facet < A.outerSize(); ++facet) {
+        // build each facet's guide norm
+        int best_idx = 0;
+        double best_metric = -1;
         for (Eigen::SparseMatrix<int>::InnerIterator it(A, facet); it; ++it) {
             int patch = it.row();
             if (patch_metric(patch) > best_metric){
@@ -163,7 +183,8 @@ void bilateral_guide(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::
                     int max_iter = 1,
                     int update_max_iter = 20,
                     double sigma_c = 0.,
-                    double sigma_s = 0.2) {
+                    double sigma_s = 0.2,
+                    bool use_worst_patch = false) {
     Eigen::SparseMatrix<int> A; // facet adjacent matrix 
     Eigen::MatrixXd N; // facet normal
     Eigen::MatrixXd C = Eigen::MatrixXd::Zero(F.rows(), 3); // centroids of facet
@@ -180,6 +201,7 @@ void bilateral_guide(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::
     Eigen::MatrixXd GN;
     get_patch(V, N, A, patch_metric, patch_norm);
     get_guide(patch_metric, patch_norm, A, GN);
+    if(use_worst_patch) get_guide_worst(patch_metric, patch_norm, A, GN);
 
     if (sigma_c == 0.){
         // if not user specified, use paper setting
@@ -237,6 +259,7 @@ int main(int argc, char *argv[])
     double sigma_c = 0., sigma_s = 0.2;
     int iter_num = 1;
     int vupdate_iter_num = 20;
+    bool use_worst_patch = false;
 
     auto cli = (clipp::value("input file", infile),
                 clipp::value("output file", outfile),
@@ -247,7 +270,8 @@ int main(int argc, char *argv[])
                 clipp::option("-i", "--iter").doc("iteration times used for normal filtering")
                     & clipp::value("iter_num", iter_num), 
                 clipp::option("--update_iter").doc("iteration times used for vertex update")
-                    & clipp::value("vupdate_iter_num", vupdate_iter_num)
+                    & clipp::value("vupdate_iter_num", vupdate_iter_num),
+                clipp::option("--use_worst_patch").set(use_worst_patch).doc("choose worst patch, to validate patch selection")
                 );
 
     if(parse(argc, argv, cli)) {
@@ -266,7 +290,7 @@ int main(int argc, char *argv[])
 
     auto start = std::chrono::high_resolution_clock::now();  
 
-    bilateral_guide(V, F, p, iter_num, vupdate_iter_num, sigma_c, sigma_s);
+    bilateral_guide(V, F, p, iter_num, vupdate_iter_num, sigma_c, sigma_s, use_worst_patch);
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> duration = end - start;

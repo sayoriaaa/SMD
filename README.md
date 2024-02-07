@@ -238,7 +238,7 @@ $$
 
 TODO:
 
-TVCG11的全局方法未实现、guide norm filtering的方法待验证
+TVCG11的全局方法未实现
 
 Thingi10K(a) 使用`lib::read_triangle_mesh`直接读取stl添加噪声（结果不对）
 
