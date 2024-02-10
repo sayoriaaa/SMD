@@ -176,7 +176,6 @@ int main(int argc, char *argv[])
 
     Eigen::SparseMatrix<double> I(V.rows(), V.rows());
     I.setIdentity();
-
     // pre-cal edge topology relation
     Eigen::MatrixXi edge_init;
     initEdge(V, F, edge_init);
@@ -246,5 +245,5 @@ int main(int argc, char *argv[])
 
     // write mesh
     igl::writeOBJ(outfile, p, F);
-
+    return 0;
 }

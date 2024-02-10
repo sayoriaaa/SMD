@@ -8,6 +8,7 @@ double average_dihedral(const Eigen::MatrixXd& V, const Eigen::MatrixX4i& init) 
         int v1 = init(i,1);
         int v3 = init(i,2);
         int v4 = init(i,3);
+        if(v4==-1) continue;//handle boundary case
         //cout << v1 << " "<< v2<< " "<<v3<< " "<<v4<<endl; // why NO v3 v4???? SOLVED
         // calc weights
         //       v1
@@ -26,10 +27,18 @@ double average_dihedral(const Eigen::MatrixXd& V, const Eigen::MatrixX4i& init) 
         Eigen::Vector3d norm2 = ((p1-p2).cross(p4-p2)).normalized(); // inverse cross direction
 
         double cos_theta = norm1.dot(norm2);
+        cos_theta = cos_theta > -1 ? cos_theta : -1;
+        cos_theta = cos_theta < 1  ? cos_theta : 1; // avoid nan
         double angle_rad = std::acos(cos_theta);
         sum += angle_rad;
     }
     return sum/init.rows();
+}
+
+long long cantor(int s, int d){
+    long long k1 = static_cast<long long>(s);
+    long long k2 = static_cast<long long>(d);
+    return (k1+k2)*(k1+k2+1)/2 + k1;
 }
 
 void initEdge(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXi& ret) {
@@ -37,22 +46,20 @@ void initEdge(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixX
     using namespace Eigen;
 
     int edge_num = 0;
-    const Index n = F.maxCoeff()+1;
+    //const int n = F.maxCoeff()+1;
+    const int n = V.rows();
 
     typedef Triplet<int> IJV;
-    vector<IJV > ijv; // adjencent matrix
-
-    unordered_set<int> occupied;
+    unordered_set<long long> occupied;
 
     vector<IJV > vert3;
     vector<IJV > vert4;
 
-    ijv.reserve(F.size());
-    vert3.reserve(F.size());
-    vert4.reserve(F.size());
+    vert3.reserve(F.size()*2);
+    vert4.reserve(F.size()*2);
 
-    Index s, d, lefter;
-    int hash_val; // give each edge an unique value, guaranteed
+    int s, d, lefter;
+    long long tuple_map; // give each edge an unique value, guaranteed
     // Loop over **simplex** (i.e., **not quad**)
     for(int i = 0;i<F.rows();i++)
     {
@@ -73,15 +80,17 @@ void initEdge(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixX
                 s = F(i,1); 
                 lefter = F(i,0);
             }
+            if(lefter>V.rows()) std::cout << lefter <<std::endl;
+            assert(lefter<V.rows());
 
-            if(s>d) swap(s,d); // make sure s < d, then we can cut memory half                
-            hash_val = s + n*d; // TODO: or directly use .coeff to tell, more mem efficient
-            if(occupied.find(hash_val) != occupied.end()){
-                //cout << "find duplicated edge" << endl;
-                vert4.push_back(IJV(s,d,lefter));}
-            else{
-                ijv.push_back(IJV(s,d,1));  
-                occupied.insert(hash_val);
+            if(s>d) swap(s,d); // make sure s < d, then we can cut memory half     
+            assert(s<d);   
+            tuple_map = cantor(s,d);     
+            if(occupied.find(tuple_map) != occupied.end()){
+                vert4.push_back(IJV(s,d,lefter));
+            }
+            else{  
+                occupied.insert(tuple_map);
                 vert3.push_back(IJV(s,d,lefter));
                 edge_num++;
             }       
@@ -92,24 +101,28 @@ void initEdge(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixX
     
     Eigen::SparseMatrix<int> vert3q(n, n);
     Eigen::SparseMatrix<int> vert4q(n, n);
-    vert3q.reserve(F.size());
-    vert4q.reserve(F.size());
+    vert3q.reserve(edge_num);
+    vert4q.reserve(edge_num);
     vert3q.setFromTriplets(vert3.begin(), vert3.end());
     vert4q.setFromTriplets(vert4.begin(), vert4.end());
 
     ret = Eigen::MatrixXi::Zero(edge_num, 4);
-    int i=0;
-    for(auto it=ijv.begin(); it!=ijv.end(); it++){
-        int v2 = it->col();
-        int v1 = it->row(); // make sure v1 < v2, or fail to query vert3/4
-        int v3 = vert3q.coeff(v1, v2);
-        int v4 = vert4q.coeff(v1, v2);
+    for(int i=0; i<edge_num; i++){
+        int v1 = vert3[i].row();
+        int v2 = vert3[i].col();
+        assert(v1<v2);
+        int v3 = vert3[i].value();
+        int v4 = -1; // deal with boundary edge
+        tuple_map = cantor(s,d);        
+        if(occupied.find(tuple_map) != occupied.end()) v4 = vert4q.coeff(v1, v2);
+
+        if(v4>V.rows()) std::cout << v4 <<std::endl;
+        assert(v4<V.rows());
 
         ret(i, 0) = v1;
         ret(i, 1) = v2;
         ret(i, 2) = v3; 
         ret(i, 3) = v4;
-        i++;
     }
 
 }
@@ -120,7 +133,7 @@ void cotEdge_advance(const Eigen::MatrixXd& V, const Eigen::MatrixX4i& init, Eig
 
     // build edge operator!
     L.resize(init.rows(),V.rows());
-    L.reserve(10*init.rows()); // 3-simplex, following setting of libigl
+    L.reserve(4*init.rows()); // each (non boundary) edge have 4 coeff
 
     std::vector<Eigen::Triplet<double> > tripletList;
     for(int i=0; i<init.rows(); i++){
@@ -128,6 +141,7 @@ void cotEdge_advance(const Eigen::MatrixXd& V, const Eigen::MatrixX4i& init, Eig
         int v1 = init(i,1);
         int v3 = init(i,2);
         int v4 = init(i,3);
+        if(v4==-1) continue;
         //cout << v1 << " "<< v2<< " "<<v3<< " "<<v4<<endl; // why NO v3 v4???? SOLVED
         // calc weights
         //       v1
@@ -245,7 +259,7 @@ void cotEdgeArea_advance(const Eigen::MatrixXd& V, const Eigen::MatrixXi& init, 
 
     // build edge operator!
     L.resize(init.rows(),V.rows());
-    L.reserve(10*init.rows()); // 3-simplex, following setting of libigl
+    L.reserve(4*init.rows()); // each (non boundary) edge have 4 coeff
 
     std::vector<Eigen::Triplet<double> > tripletList;
     for(int i=0; i<init.rows(); i++){
@@ -253,6 +267,7 @@ void cotEdgeArea_advance(const Eigen::MatrixXd& V, const Eigen::MatrixXi& init, 
         int v1 = init(i,1);
         int v3 = init(i,2);
         int v4 = init(i,3);
+        if(v4==-1) continue;
 
         // calc weights
         //       v1
@@ -367,7 +382,6 @@ void cotEdgeArea(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::Spar
 void Regulation(const Eigen::MatrixXd& V, const Eigen::MatrixXi& init, Eigen::SparseMatrix<double>& L) {
     using namespace std;
     using namespace Eigen;
-    // TODO: WHY THIS IMPLEMENT FAILS TO REGULARIZE???
 
     // build edge operator!
     L.resize(init.rows(),V.rows());
@@ -379,6 +393,7 @@ void Regulation(const Eigen::MatrixXd& V, const Eigen::MatrixXi& init, Eigen::Sp
         int v1 = init(i,1);
         int v3 = init(i,2);
         int v4 = init(i,3);
+        if(v4 == -1) continue;        
 
         tripletList.push_back(Eigen::Triplet<double> (i, v1, 1.));
         tripletList.push_back(Eigen::Triplet<double> (i, v2, 1.));

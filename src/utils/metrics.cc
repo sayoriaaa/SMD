@@ -57,6 +57,7 @@ double OEP(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F) {
         int v1 = init(i,1);
         int v3 = init(i,2);
         int v4 = init(i,3);
+        if(v4==-1) continue;
         //cout << v1 << " "<< v2<< " "<<v3<< " "<<v4<<endl; // why NO v3 v4???? SOLVED
         // calc weights
         //       v1
@@ -105,7 +106,7 @@ int main(int argc, char *argv[])
                 );
 
     if(parse(argc, argv, cli)) {
-        std::cout << "SMD-L0: Metrics" << std::endl;
+        std::cout << "SMD: Metrics" << std::endl;
     }
     else{
         std::cout << make_man_page(cli, "Metrics");
@@ -132,9 +133,9 @@ int main(int argc, char *argv[])
         std::cout << "AAD:" << aad << std::endl;
         if(use_log) file << aad << std::endl;
     }
-    if(use_aad){
+    if(use_ahd){
         assert(infile_gt != "");
-        double ahd = AHD(VA, VB, FA);
+        double ahd = AHD(VA, VB, FB);
         std::cout << "AHD:" << ahd << std::endl;
         if(use_log) file << ahd << std::endl;
     }

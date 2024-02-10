@@ -13,7 +13,7 @@
 
 ## 🌈简介
 
-SMD-lab旨在提供一个跨平台、开箱即用的保特征网格降噪算法工具，覆盖多种基于稀疏优化的网格降噪算法，用于测试和比较不同算法（包括公开论文的未开源算法）在处理网格数据时的效果。这个项目的目标是个人的学习研究，但同时也希望能帮助研究者和从业者评估、比较和改进他们的算法。期望这个项目能够为未来的研究与应用提供有价值的参考。
+SMD-lab是一个基于libigl的毕业设计，旨在提供一个跨平台、开箱即用的保特征网格降噪算法工具，用于测试和比较不同算法在处理网格数据时的效果。
 
 | $L_0$优化                                                    | 压缩感知                                                     | 低秩分解                                                     | 滤波                                                         |
 | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
@@ -21,7 +21,12 @@ SMD-lab旨在提供一个跨平台、开箱即用的保特征网格降噪算法�
 |                                                              |                                                              |                                                              | [(TVCG'11) Bilateral Normal Filtering for Mesh Denoising](https://dl.acm.org/doi/10.1109/TVCG.2010.264) |
 |                                                              |                                                              |                                                              | [(Proc. PG'15) Guided Mesh Normal Filtering](http://staff.ustc.edu.cn/~juyong/GuidedFilter.html) |
 
-该项目正在持续编写中，已复现的算法可以查看[图](###hello world!)
+该项目正在持续编写中，已复现的算法有（可以查看[图](###hello world!)）：
+
+- L0
+- BF
+- BNF
+- GNF
 
 ## 使用
 
@@ -58,13 +63,7 @@ pip install pyvista
   - `[论文算法]/`
   - `dependencies/` 
   - `utils/` 
-
 - `data/` 数据集
-  - `thingi10K/` （需下载）
-  - `printobject/` （需下载）
-  - ...
-  - `examples/`  
-  
 - `bash/`
   - `*.bat` win下的任务
   - `*.sh` linux下的任务
@@ -74,6 +73,7 @@ pip install pyvista
     - `gt`
     - `noise`
     - `denoised`
+    - `time.json` 记录每个网格去噪的时间开销
 
 
 
@@ -103,23 +103,7 @@ SMD使用[clipp](https://github.com/muellan/clipp)来解析命令行参数，`bu
 
 ## 数据集
 
-| 合成数据集    | 真实数据集    |
-| ------------- | ------------- |
-| Thingi10K[^2] | PrintData[^3] |
-| Synthetic[^1] | Kinect v1[^1] |
-|               | Kinect v2[^1] |
-|               | Kinect F[^1]  |
-
-
-
-由于空间和版权原因，仓库内不包含这些数据集，它们可以在以下网站进行下载：
-
-- [1] https://wang-ps.github.io/denoising.html
-- [2] https://ten-thousand-models.appspot.com (a)
-- [2] https://www.kaggle.com/datasets/lukaszfuszara/thingi10k-name-and-category/data (b)
-- [3] https://drive.google.com/file/d/1x561-v3z1j0q_1qHYG0Fja1W-sqjhYpC/view
-
-
+SMD支持两篇论文所提供的数据集：CNR提供的合成数据集Synthetic，扫描数据集Kinect v1、Kinect v2、Kinect F；GCN提供的扫描数据集PrintData。它们可以分别在https://wang-ps.github.io/denoising.html和https://drive.google.com/file/d/1x561-v3z1j0q_1qHYG0Fja1W-sqjhYpC/view下载
 
 解压后，`data`下的文件为
 
@@ -130,68 +114,26 @@ SMD使用[clipp](https://github.com/muellan/clipp)来解析命令行参数，`bu
     ├── Kinect_v1
     ├── Kinect_v2
     ├── Syhthetic
-    ├── Thingi10K / Thingi10K_name_and_category
     └── PrintedDataset
 ```
 
-你可以使用提供的python脚本来轻松地创建测试数据集的任务
+PrintData数据集提供的噪声网格存在拓扑问题，对于一些算法会失效，因此需要先运行
 
 ```
-conda activate SMD
+python scripts/refine_pd.py
 ```
 
-### Thingi10K
+得到修复后的`PrintedDataset_r`数据集
 
-(a)
-
-```
-python scripts/thingi10k.py
---num [指定网格的数量] //默认为10
---job_name [任务名称，将在run目录下创建这一任务] //默认自动创建thingi10k_00x
---denoise_command [降噪单个模型的参数，不需要指定输入输出文件] //默认为默认参数的L0算法
---noise_command [为单个模型添加噪声的参数，不需要指定输入输出文件] //为默认参数的添加噪声
-```
-
-
-
-(b)
+通过`scripts/dataset.py`可一键运行数据集任务，使用`-h`查看帮助信息。e.g. 执行
 
 ```
-python scripts/thingi10k_nc.py
---folder [选择thingi10k文件下一级的类别] //默认为执行全选所有类别
---job_name [任务名称，将在run目录下创建这一任务] //默认自动创建thingi10k_00x
---denoise_command [降噪单个模型的参数，不需要指定输入输出文件] //默认为默认参数的L0算法
---noise_command [为单个模型添加噪声的参数，不需要指定输入输出文件] //默认为默认参数的添加噪声
+python scripts/dataset.py --dataset PrintedDataset --metrics_args "--ahd --oep"
 ```
 
+PS: 这里放弃了Thingi10K数据集，因为一方面已经有了Syhthetic数据集，一方面Thingi10K的数据集数量实在太多，全部跑完不现实，最后Thingi10K数据集中的网格不仅存在拓扑问题且网格质量不高（由样条转化而来）
 
-
-### PrintData
-
-（该数据集无需手动添加噪声）
-
-```
-python scripts/printdata.py
---job_name [任务名称，将在run目录下创建这一任务] //默认自动创建printdata_00x
---noise_command [为单个模型添加噪声的参数，不需要指定输入输出文件] //默认为默认参数的L0算法
-```
-
-
-
-### Kinect系列/Synthetic
-
-（该数据集无需手动添加噪声）
-
-```
-python scripts/kinect.py
---job_name [任务名称，将在run目录下创建这一任务] //默认自动创建kinect_00x
---noise_command [为单个模型添加噪声的参数，不需要指定输入输出文件] //默认为默认参数的L0算法
---dataset [可选v1、v2、f、s，分别对应Kinect v1,Kinect v2,Kinect F,Synthetic] //默认为合成数据集
-```
-
-
-
-注：其中(a)是Thingi10K的官方版本，`.tar.gz`格式，在windows下运行`tar -xvzf Thingi10K.tar.gz`解压。然而，该版本只包含网格，相关信息需要使用`http://www.thingiverse.com/download:{file_id}`查询。因此，这里提供了另一个Thingi10K的kaggle版本(b),包含了类别和名称信息,方便查看特定类别的网格降噪效果（非完整）
+PPS: PrintedDataset暂时不支持aad（尽管GCN中是有的，但不理解在F不一致下如何实现），期望作者能回邮件捏
 
 ## 降噪结果评估
 
@@ -225,22 +167,9 @@ $$
 
 
 
+## TODO
+
+BNF、GNF的全局方法实现
 
 
-
-## 相关文献
-
-[^1]: Mesh denoising via cascaded normal regression
-[^2]:Thingi10K: A Dataset of 10,000 3D-Printing Models
-[^3]:GCN-Denoiser: Mesh Denoising with Graph Convolutional Networks
-
-
-
-TODO:
-
-TVCG11的全局方法未实现
-
-Thingi10K(a) 使用`lib::read_triangle_mesh`直接读取stl添加噪声（结果不对）
-
-Thingi10K(b) 先使用openmesh转换为obj（中间报错），再对obj文件添加噪声，结果正确（太慢）
 
