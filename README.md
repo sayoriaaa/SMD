@@ -15,18 +15,19 @@
 
 SMD-lab是一个基于libigl的毕业设计，旨在提供一个跨平台、开箱即用的保特征网格降噪算法工具，用于测试和比较不同算法在处理网格数据时的效果。
 
-| $L_0$优化                                                    | 压缩感知                                                     | 低秩分解                                                     | 滤波                                                         |
+| 稀疏正则化                                                   | 压缩感知                                                     | 低秩分解                                                     | 滤波                                                         |
 | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | [(SIGGRAPH'13) Mesh denoising via *L*0 minimization](https://dl.acm.org/doi/10.1145/2461912.2461965) | [(SIGGRAPH'14) Decoupling Noises and Features via Weighted *l*1-analysis Compressed Sensing](http://staff.ustc.edu.cn/~lgliu/Projects/2014_DecouplingNoise/default.htm) | [(Proc. PG'18) Non-Local Low-Rank Normal Filtering for Mesh Denoising](https://onlinelibrary.wiley.com/doi/abs/10.1111/cgf.13556) | [(SIGGRAPH'03) Bilateral mesh denoising](https://dl.acm.org/doi/10.1145/882262.882368) |
-|                                                              |                                                              |                                                              | [(TVCG'11) Bilateral Normal Filtering for Mesh Denoising](https://dl.acm.org/doi/10.1109/TVCG.2010.264) |
+| [(CAD'13) Feature-preserving filtering with L0 gradient minimization](https://dl.acm.org/doi/10.1016/j.cag.2013.10.025) |                                                              |                                                              | [(TVCG'11) Bilateral Normal Filtering for Mesh Denoising](https://dl.acm.org/doi/10.1109/TVCG.2010.264) |
 |                                                              |                                                              |                                                              | [(Proc. PG'15) Guided Mesh Normal Filtering](http://staff.ustc.edu.cn/~juyong/GuidedFilter.html) |
 
-该项目正在持续编写中，已复现的算法有（可以查看[图](###hello world!)）：
+该项目正在持续编写中，已复现的算法有：
 
 - L0
 - BF
 - BNF
 - GNF
+- L0CDF（CAD'13）
 
 ## 使用
 
@@ -113,7 +114,7 @@ SMD支持两篇论文所提供的数据集：CNR提供的合成数据集Syntheti
     ├── Kinect_Fusion
     ├── Kinect_v1
     ├── Kinect_v2
-    ├── Syhthetic
+    ├── Synthetic
     └── PrintedDataset
 ```
 
@@ -155,6 +156,7 @@ $$
 ### 翻折边比例（OEP）
 
 基于$L_0$论文中folded triangle的可视化，使用边所对应的二面角进行网格评估，给出一个定量度量
+
 $$
 E_f=\frac{1}{N_e}\sum_{e^r_i\in F^r} \tau(e^r_i)
 \\

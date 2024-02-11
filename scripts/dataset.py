@@ -134,7 +134,7 @@ def exec_job(gt_path, gt_name, noise_path, noise_name, root, algo, algo_args, me
                 break 
         shutil.copy2(noise_path[cnt], noise_file) # init root/noise
     
-    for i in range(len(gt_files)):
+    for i in range(len(noise_files)):
         # call denoise algorithm
         command = os.getcwd() + '/build/' + algo + ' {} {} '.format(noise_files[i], denoised_files[i])
         if algo_args!=None:
