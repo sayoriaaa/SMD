@@ -71,6 +71,8 @@ double g(int iter, int iter_max, double lambda, beta_strategy s){
         return std::pow((double)iter/iter_max, 2.2)*lambda;
     case MULTIPLICATIVE:
         return std::pow(1.5, (double)(iter-iter_max))*lambda;
+    default:
+        return 1;// just look good on compiling
     }
 }
 

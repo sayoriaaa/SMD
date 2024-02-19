@@ -1,4 +1,6 @@
-#include "smooth.hpp"
+#include "phase1.hpp"
+#include "clipp.h"
+#include <chrono>
 
 
 GCVSolver::GCVSolver(const Eigen::MatrixXi& F, const Eigen::MatrixXd& V, bool eigenvectors){
@@ -9,16 +11,23 @@ GCVSolver::GCVSolver(const Eigen::MatrixXi& F, const Eigen::MatrixXd& V, bool ei
 
 }
 
-void GCVSolver::init(int m){
-    std::cout << "analyzing eigen system\n" << std::endl;
-    std::cout << "Vert num: " << vert.rows() << std::endl;
-    if(m==1){
-        eigen_dense_exact();
-    }
-    else if (m==2)
+void GCVSolver::init(strategy stra){
+    std::cout << "analyzing eigen system [ Vertex " << vert.rows() << " ]" << std::endl;
+    switch (stra)
     {
+    case DENSE_EXACT:
+        eigen_dense_exact();
+        break;
+    case SPARSE_EXACT:
         eigen_saprse_exact();
-    }   
+        break;
+    case SPARSE_INEXACT:
+        // TODO
+        break;
+    default:
+        break;
+    }
+    std::cout << "solver init done" << std::endl;
 }
 
 void GCVSolver::get_S_eigen(Eigen::MatrixXd& p, double lambda){
@@ -75,8 +84,8 @@ double GCVSolver::ternary_search(double lambda, double step_size){
         mid2_val = gcv(mid2);
         if(mid1_val>mid2_val) l=mid1;
         else r=mid2;
-        std::cout << "mid1=" << mid1 << " gcv(mid1)=" << mid1_val
-                    << "mid2=" << mid2 << " gcv(mid2)=" << mid2_val
+        std::cout << " mid1=" << mid1 << " gcv(mid1)=" << mid1_val
+                    << " mid2=" << mid2 << " gcv(mid2)=" << mid2_val
                     << std::endl;
     }
     return (l+r)/2;
@@ -85,8 +94,8 @@ double GCVSolver::ternary_search(double lambda, double step_size){
 void GCVSolver::solve(double eps){
     solver_eps = eps;
     double prev_lambda, lambda;
-    int iter = 0;
-    lambda = ternary_search(0);   
+    int iter = 1;
+    lambda = 0;   
     while(1){
         prev_lambda = lambda;
         lambda = ternary_search(lambda);
@@ -294,69 +303,59 @@ void smooth_eigen_dense_exact(const Eigen::MatrixXi& F, const Eigen::MatrixXd& V
 
 int main(int argc, char *argv[])
 {   
-    std::string inputFile = "../data/examples/cube.obj";
-    std::string outputFile = "../run/smoothed.obj";
+    std::string infile = "";
+    std::string outfile = "";
 
-    double lambda = 50;
-    int method = 0;
+    double lambda;
+    double gcv_eps = 1e-6;
+    int os = 0;
+    strategy stra;
+    bool set_lambda = false;
+    bool use_eigenvectors = false;
+    auto cli = (clipp::value("input file", infile),
+                clipp::value("output file", outfile),
+                clipp::option("-l", "--lambda").set(set_lambda).doc("if unset, default use gcv to find best lambda")
+                    & clipp::value("lambda", lambda), 
+                clipp::option("-s", "--stragety").doc("0: dense_exact, 1:sparse_exact, 2: sparse_inexact")
+                    & clipp::value("os", os),
+                clipp::option("-e", "--gcv_eps").doc("gcv search stop condition")
+                    & clipp::value("gcv_eps", gcv_eps),
+                clipp::option("--ev").set(use_eigenvectors).doc("gcv solver store eigen_vectors, aggravate memory usage")
+                );
 
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-
-        if (arg == "-i" || arg == "--input") {
-            if (i + 1 < argc) {
-                inputFile = argv[i + 1];
-                i++; // Skip the next argument (file name)
-            } else {
-                std::cerr << "-i, --input requires an argument." << std::endl;
-                return 1;
-            }
-        } else if (arg == "-o" || arg == "--output") {
-            if (i + 1 < argc) {
-                outputFile = argv[i + 1];
-                i++; // Skip the next argument (file name)
-            } else {
-                std::cerr << "-o, --output requires an argument." << std::endl;
-                return 1;
-            }
-        } else if (arg == "-l" || arg == "--lambda") {
-            if (i + 1 < argc) {
-                lambda = std::stod(argv[i + 1]);
-                i++; // Skip the next argument (number)
-            } else {
-                std::cerr << "-o, --output requires an argument." << std::endl;
-                return 1;
-            }
-        } else if (arg == "-m" || arg == "--method") {
-            if (i + 1 < argc) {
-                method = std::stoi(argv[i + 1]);
-                i++; // Skip the next argument (number)
-            } else {
-                return 1;
-            }
-        } 
+    if(parse(argc, argv, cli)) {
+        std::cout << "SMD-CS: C++ implementation of \"Decoupling noise and features via weighted l1-analysis compressed sensing\" (Phase 1)" << std::endl;
+        assert(os==0 || os==1 || os==2);
+        stra = (strategy)os;
     }
-    // end parsing
+    else{
+        std::cout << make_man_page(cli, "CS(Phase 1)");
+        return -1;
+    }
 
     Eigen::MatrixXd V;
     Eigen::MatrixXi F;
     Eigen::SparseMatrix<double> L; // Laplacian operator 
 
-    // read mesh 
-    igl::readOBJ(inputFile, V, F);
-
+    igl::readOBJ(infile, V, F);
     Eigen::MatrixXd p = V;
-    //if(method==0) smooth_cholesky(F, V, p, lambda=lambda);
-    //if(method==1) smooth_eigen_saprse_exact(F, V, p, lambda=lambda);
-    //if(method==2) smooth_eigen_dense_exact(F, V, p, lambda=lambda);
 
-    GCVSolver* s = new GCVSolver(F, V);
-    s->init();
-    s->solve();
-    smooth_cholesky(F, V, p, s->result);
+    auto start = std::chrono::high_resolution_clock::now(); 
+
+    if(!set_lambda){
+        GCVSolver* s = new GCVSolver(F, V, use_eigenvectors);
+        s->init(stra);
+        s->solve(gcv_eps);
+        lambda = s->result;
+    }    
+    smooth_cholesky(F, V, p, lambda);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> duration = end - start;
+    std::cout << "Execution time: " << duration.count() << " ms" << std::endl;
  
     // write mesh
-    igl::writeOBJ(outputFile, p, F);
+    igl::writeOBJ(outfile, p, F);
 
 
 }

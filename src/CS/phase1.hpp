@@ -16,6 +16,12 @@
 
 void Laplacian(const Eigen::MatrixXi& F, Eigen::SparseMatrix<double>& L);
 
+enum strategy {
+    DENSE_EXACT,
+    SPARSE_EXACT,
+    SPARSE_INEXACT
+};
+
 class GCVSolver
 {
     public:
@@ -33,7 +39,7 @@ class GCVSolver
     public:
         bool use_eigenvectors = false;//considering memory
         GCVSolver(const Eigen::MatrixXi& F, const Eigen::MatrixXd& V, bool use_eigenvectors = false);
-        void init(int m=1);
+        void init(strategy stra);
         void get_S(Eigen::MatrixXd& p, double lambda);
         
         double gcv(double lambda);
