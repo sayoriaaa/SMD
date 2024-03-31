@@ -11,7 +11,10 @@ void genDirection(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::Mat
         igl::per_vertex_normals(V, F, direction);
     }
     else {
-        direction = Eigen::MatrixXd::Random(V.rows(), V.cols());
+        direction = Eigen::MatrixXd::Zero(V.rows(), V.cols());
+        direction = direction + Eigen::MatrixXd::Random(V.rows(), V.cols());
+        direction = direction + Eigen::MatrixXd::Random(V.rows(), V.cols());
+        direction = direction + Eigen::MatrixXd::Random(V.rows(), V.cols());// three times to simulate gaussian
         for (int i = 0; i<direction.rows(); i++){
             direction.row(i).normalize();
         }
@@ -31,7 +34,7 @@ void genNoise(Eigen::MatrixXd& noise, double sigma, int noise_type = 0) {
         }
     }
     if (noise_type==1){
-        // gaussiam
+        // gaussian
        std::normal_distribution<double> distribution(0, sigma);
         for (int i = 0; i<noise.rows(); i++){
             double val = distribution(gen);

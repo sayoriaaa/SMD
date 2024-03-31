@@ -14,3 +14,7 @@ bash/*
 !bash/cuda.bat
 
 scripts/__pycache__
+# use to produce my own graduation paper's figures
+scripts/paper_raw_imgs.py 
+scripts/l0_vis.py 
+imgs/paper

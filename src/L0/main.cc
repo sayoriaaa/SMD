@@ -132,7 +132,8 @@ int main(int argc, char *argv[])
     double alpha = 0;
     int Laplacian_type = 2; // default is area-based Laplacian
     double reg_decay = 0.5; // we found this stragey produce less plesant result, 0 is recommended
-    bool auto_lambda = true, use_regualtion = false; 
+    bool auto_lambda = true, use_regualtion = false;
+    double mul = 1; 
 
     bool log = false;
     std::string logfolder = "";
@@ -154,6 +155,8 @@ int main(int argc, char *argv[])
                 clipp::option("-rg", "--reg_decay").doc("paper suggests impact of regulation decreases in iteration \
                     , therefore set as 0.5, however, we found this stragey produce less plesant result, 1 is recommended")
                     & clipp::value("reg_decay", reg_decay),
+                clipp::option("--mul").doc("multiply lambda by mul")
+                    & clipp::value("mul", mul),
                 clipp::option("--log").set(log).doc("save intermediate energy result and mesh in logfolder(without /)")
                     & clipp::value("logfolder", logfolder));
 
@@ -190,6 +193,7 @@ int main(int argc, char *argv[])
         double average_length = L.mean();
         lambda = 0.02 * average_length * average_length * gamma;
         std::cout << "auto lambda: " << lambda << "\n";
+        lambda *= mul;
     }
 
     if(use_regualtion){
