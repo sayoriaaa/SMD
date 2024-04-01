@@ -18,3 +18,4 @@ scripts/__pycache__
 scripts/paper_raw_imgs.py 
 scripts/l0_vis.py 
 imgs/paper
+make_figure.ipynb
