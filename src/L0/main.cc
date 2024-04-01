@@ -5,6 +5,7 @@
 #include <igl/readOBJ.h>
 #include <chrono>
 #include <fstream>
+#include <omp.h>
 
 
 bool solver_warpper(const Eigen::SparseMatrix<double>& A, 
@@ -122,6 +123,7 @@ private:
 
 int main(int argc, char *argv[])
 {   
+    omp_set_num_threads(8);
     bool use_cholesky = true;
     std::string infile = "";
     std::string outfile = "";
