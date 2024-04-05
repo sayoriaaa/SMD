@@ -1,6 +1,6 @@
 #include "l0.hpp"
 
-double average_dihedral(const Eigen::MatrixXd& V, const Eigen::MatrixX4i& init) {
+double average_dihedral(const Eigen::MatrixXd& V, const Eigen::MatrixX4i& init, bool use_math_defination) {
     double sum = 0;
 
     for(int i=0; i<init.rows(); i++){
@@ -24,8 +24,9 @@ double average_dihedral(const Eigen::MatrixXd& V, const Eigen::MatrixX4i& init) 
         Eigen::Vector3d p4 = V.row(v4);
 
         Eigen::Vector3d norm1 = ((p1-p2).cross(p3-p2)).normalized();
-        Eigen::Vector3d norm2 = ((p1-p2).cross(p4-p2)).normalized(); // inverse cross direction
-
+        Eigen::Vector3d norm2;
+        if(use_math_defination) norm2 = ((p1-p2).cross(p4-p2)).normalized(); // inverse cross direction, mathematical define
+        else norm2 = ((p4-p2).cross(p1-p2)).normalized(); // when dihedral means facet norm angle
         double cos_theta = norm1.dot(norm2);
         cos_theta = cos_theta > -1 ? cos_theta : -1;
         cos_theta = cos_theta < 1  ? cos_theta : 1; // avoid nan

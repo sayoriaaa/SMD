@@ -10,7 +10,9 @@ run/*
 bash/*
 !bash/build.bat
 !bash/test_cube.bat
-!bash/eval_cube.bat
+!bash/test_selected.bat
+!bash/test_ir.bat
+!bash/test_robust.bat
 !bash/cuda.bat
 
 scripts/__pycache__
@@ -18,4 +20,4 @@ scripts/__pycache__
 scripts/paper_raw_imgs.py 
 scripts/l0_vis.py 
 imgs/paper
-make_figure.ipynb
+exp

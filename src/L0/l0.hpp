@@ -10,7 +10,7 @@
 #include <unordered_set>
 
 
-double average_dihedral(const Eigen::MatrixXd& V, const Eigen::MatrixX4i& init);
+double average_dihedral(const Eigen::MatrixXd& V, const Eigen::MatrixX4i& init, bool use_math_defination=false);
 
 void initEdge(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXi& ret);
 

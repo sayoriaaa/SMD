@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(SMD)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O1")
+
 include_directories("src/dependencies/eigen")
 include_directories("src/dependencies/libigl/include")
 include_directories("src/dependencies/spectra/include")
@@ -16,8 +18,4 @@ add_executable(BGF "src/bilateral/main3.cc")
 
 add_executable(L0CDF "src/L0CDF/main.cc")
 add_executable(cs1 "src/CS/phase1.cc" "src/CS/phase1.hpp")
-#add_executable(noise "src/add_noise.cc")
-#add_executable(L0min "src/minimal.cc")
-#add_executable(c2 "src/smooth.cc")
-#add_executable(l0_local "src/l0_local.cc")
 

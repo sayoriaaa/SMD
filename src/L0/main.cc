@@ -1,11 +1,11 @@
 #include "l0.hpp"
 #include "clipp.h"
-//#include <igl/read_triangle_mesh.h>
 #include <igl/writeOBJ.h>
 #include <igl/readOBJ.h>
 #include <chrono>
 #include <fstream>
 
+#define MY_PI 3.14159265358979323846
 
 bool solver_warpper(const Eigen::SparseMatrix<double>& A, 
                     const Eigen::MatrixXd& b,
@@ -136,6 +136,7 @@ int main(int argc, char *argv[])
     double mul = 1; 
 
     bool log = false;
+    bool dihadral_math = false;
     std::string logfolder = "";
     
     std::unique_ptr<L0_Logger> loggerPtr;
@@ -157,6 +158,7 @@ int main(int argc, char *argv[])
                     & clipp::value("reg_decay", reg_decay),
                 clipp::option("--mul").doc("multiply lambda by mul")
                     & clipp::value("mul", mul),
+                clipp::option("--angle_math").set(dihadral_math).doc("set to mathematical definiation of dihedral angle. (wrong)"),
                 clipp::option("--log").set(log).doc("save intermediate energy result and mesh in logfolder(without /)")
                     & clipp::value("logfolder", logfolder));
 
@@ -185,24 +187,22 @@ int main(int argc, char *argv[])
 
     Eigen::SparseMatrix<double> R; // Regulation operator
     Regulation(V, edge_init, R);
-
-    if(auto_lambda){
-        double gamma = average_dihedral(V, edge_init);
+ 
+    double gamma = average_dihedral(V, edge_init, dihadral_math);
+    if(auto_lambda){    
         Eigen::MatrixXd L;
         igl::edge_lengths(V, F, L);
         double average_length = L.mean();
-        lambda = 0.02 * average_length * average_length * gamma;
-        std::cout << "auto lambda: " << lambda << "\n";
+        lambda = 0.2 * average_length * average_length * gamma;
         lambda *= mul;
     }
 
-    if(use_regualtion){
-        double gamma = average_dihedral(V, edge_init);
-        alpha = 0.1 * gamma;
-        std::cout << "Average dihedral angle: " << (gamma * 180.0 / 3.1415) << "\n"
-                  << "auto alpha: " << alpha << "\n"
-                  ;
-    }
+    if(use_regualtion) alpha = 0.1 * gamma;
+
+    std::cout << "Average dihedral angle: " << (gamma * 180.0 / 3.1415) << "\n"
+              << "lambda: " << lambda << "\n"            
+              << "alpha: " << alpha << "\n";
+
 
     // start opt
     double beta = 1.0e-3;
@@ -212,7 +212,6 @@ int main(int argc, char *argv[])
     while(beta < beta_max){
         iter++;
         // build Laplacian operator
-        std::cout << "iter: " << iter << std::endl;
         if(Laplacian_type==0) igl::cotmatrix(p, F, D);
         else if(Laplacian_type==1) cotEdge_advance(p, edge_init, D);
         else if(Laplacian_type==2) cotEdgeArea_advance(p, edge_init, D);

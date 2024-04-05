@@ -100,15 +100,10 @@ int main(int argc, char *argv[])
                     & clipp::value("infile_gt", infile_gt), 
                 clipp::option("--ahd").set(use_ahd).doc("average Hausdorff distance"),
                 clipp::option("--aad").set(use_aad).doc("average normal angular (degree)"),
-                clipp::option("--oep").set(use_oep).doc("over-flipped edge percentage"),
-                clipp::option("--logfile").set(use_log).doc("enable log, specily log file")
-                    & clipp::value("logfile", logfile) 
+                clipp::option("--oep").set(use_oep).doc("over-flipped edge percentage")
                 );
 
-    if(parse(argc, argv, cli)) {
-        std::cout << "SMD: Metrics" << std::endl;
-    }
-    else{
+    if(!parse(argc, argv, cli)){
         std::cout << make_man_page(cli, "Metrics");
         return -1;
     }
