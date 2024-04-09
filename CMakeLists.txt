@@ -8,7 +8,7 @@ include_directories("src/dependencies/libigl/include")
 include_directories("src/dependencies/spectra/include")
 include_directories("src/dependencies/clipp/include")
 
-add_executable(L0 "src/L0/main.cc" "src/L0/l0.cc" "src/L0/l0.hpp")
+add_executable(L0-iter "src/L0/main.cc" "src/L0/l0.cc" "src/L0/l0.hpp")
 add_executable(noise "src/utils/add_noise.cc")
 add_executable(metrics "src/utils/metrics.cc" "src/L0/l0.cc")
 

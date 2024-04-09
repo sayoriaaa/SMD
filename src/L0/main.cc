@@ -4,63 +4,186 @@
 #include <igl/readOBJ.h>
 #include <chrono>
 #include <fstream>
+#include <Eigen/IterativeLinearSolvers>
+#include <unsupported/Eigen/IterativeSolvers>
 
 #define MY_PI 3.14159265358979323846
+#define MAX_ITER 100000
+
+void gaussSeidelSolver(const Eigen::SparseMatrix<double>& A, 
+                            const Eigen::VectorXd& b, 
+                            Eigen::VectorXd& x,
+                            int maxIterations
+                            ) {
+                                // EIGEN is CSC! if not sym, use transpose()
+    Eigen::VectorXd x_new = x; 
+    double tolerance=1e-6;
+    int iterations = 0; 
+    double residual;
+
+    while (iterations < maxIterations) {
+        for (int i = 0; i < A.outerSize(); ++i) {
+            double sum = 0.0;
+            double diag = A.coeff(i, i); 
+            for (Eigen::SparseMatrix<double>::InnerIterator it(A, i); it; ++it) {
+                if (it.row() != i)
+                    sum += it.value() * x_new(it.row());
+            }
+            x_new(i) = (b(i) - sum) / diag;
+        }   
+        x = x_new;
+        iterations++;
+        // avoid unnecessary thres calculation
+        if(maxIterations!=MAX_ITER) continue;
+        residual = (A * x_new - b).norm();
+        if (residual < tolerance)
+            break;
+    }
+    if(maxIterations==MAX_ITER) std::cout << "Iterations: " << iterations << std::endl;
+}
+
+void jacobiSolver(const Eigen::SparseMatrix<double>& A, 
+                  const Eigen::VectorXd& b, 
+                  Eigen::VectorXd& x,
+                  int maxIterations) {
+                    // EIGEN is CSC! if not sym, use transpose()
+    Eigen::VectorXd x_new = x; 
+    double tolerance=1e-6;
+    int iterations = 0; 
+    double residual;
+
+    while (iterations < maxIterations) {
+        for (int i = 0; i < A.outerSize(); ++i) {
+            double sum = 0.0;
+            double diag = A.coeff(i, i); 
+            for (Eigen::SparseMatrix<double>::InnerIterator it(A, i); it; ++it) {
+                if (it.row() != i)
+                    sum += it.value() * x(it.row());
+            }
+            x_new(i) = (b(i) - sum) / diag;
+        }   
+        x = x_new;
+        iterations++;
+        if(maxIterations!=MAX_ITER) continue;
+        residual = (A * x_new - b).norm();
+        if (residual < tolerance)
+            break;
+    }
+    if(maxIterations==MAX_ITER) std::cout << "Iterations: " << iterations << std::endl;
+}
+
+void test_solver(){
+    int iter_num = 4;
+    Eigen::SparseMatrix<double> A(4, 4);
+    A.insert(0, 0) = 10;
+    A.insert(0, 1) = -1;
+    A.insert(0, 2) = 2;
+
+    A.insert(1, 0) = -1;
+    A.insert(1, 1) = 11;
+    A.insert(1, 2) = -1;
+    A.insert(1, 3) = 3;
+
+    A.insert(2, 0) = 2;
+    A.insert(2, 1) = -1;
+    A.insert(2, 2) = 10;
+    A.insert(2, 3) = -1;
+
+    A.insert(3, 1) = 3;
+    A.insert(3, 2) = -1;
+    A.insert(3, 3) = 8;
+
+    A.makeCompressed();
+
+    Eigen::VectorXd b(4);
+    b << 6, 25, -11, 15;
+
+    //gt
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<double>> solver;
+    Eigen::VectorXd gt = solver.compute(A).solve(b);
+    std::cout << "Solution: \n" <<  gt << std::endl;
+
+    //test
+    Eigen::VectorXd x = Eigen::VectorXd::Zero(4);
+    gaussSeidelSolver(A.transpose(), b, x, iter_num);
+    std::cout << "Solution: \n" <<  x << std::endl;
+    x.setZero();
+    jacobiSolver(A, b, x, iter_num);
+    std::cout << "Solution: \n" <<  x << std::endl;
+}
+
+
+template<typename SolverType>
+void iterativeSolver(const Eigen::SparseMatrix<double>& A, 
+                        const Eigen::MatrixXd& b,
+                        Eigen::MatrixXd& p,
+                        int set_iter,
+                        int use_initial_x) {
+    SolverType solver;
+    if(set_iter!=0) solver.setMaxIterations(set_iter); 
+    solver.compute(A);
+
+    for (int i = 0; i < b.cols(); ++i) {
+        Eigen::VectorXd col_b = b.col(i);
+        Eigen::VectorXd col_x;
+        if(use_initial_x==1){
+            Eigen::VectorXd init_x = p.col(i);
+            col_x = solver.solveWithGuess(col_b, init_x);
+        } 
+        else{
+            col_x = solver.solve(col_b);
+        }
+        p.col(i) = col_x;
+        int iterations = solver.iterations();
+        if(set_iter==0) std::cout << "Iterations: " << iterations << std::endl;
+    }
+}
 
 bool solver_warpper(const Eigen::SparseMatrix<double>& A, 
                     const Eigen::MatrixXd& b,
                     Eigen::MatrixXd& p,
-                    bool& use_cholesky)
+                    int solver_type,
+                    int set_iter,
+                    int use_initial_x,
+                    bool pre=false)
 {
-    if(use_cholesky){
-            Eigen::SimplicialLLT<Eigen::SparseMatrix<double>> solver;
-            solver.analyzePattern(A);
-            solver.factorize(A);
-
-            if(solver.info() != Eigen::Success) {
-                std::cerr << "Cholesky decomposition failed" << std::endl;
-                use_cholesky = false;
-                std::cerr << "turn to LU" << std::endl;
-            }
-
-            if(use_cholesky){
-                for (int i = 0; i < b.cols(); ++i) {
-                    Eigen::VectorXd col_b = b.col(i);
-                    Eigen::VectorXd col_x = solver.solve(col_b);
-                    p.col(i) = col_x;
-                }
-
-                if(solver.info() != Eigen::Success) {
-                    std::cerr << "Cholesky solve failed" << std::endl;
-                    use_cholesky = false;
-                    std::cerr << "turn to LU" << std::endl;
-                }
-            }
+    // pre for preconditions, but i think this is trivial for our task
+    // if fang requires, i will impl its option
+    if(solver_type==0){
+        for (int i = 0; i < b.cols(); ++i) {
+            Eigen::VectorXd col_b = b.col(i);
+            Eigen::VectorXd x = p.col(i);
+            if(set_iter==0) set_iter=MAX_ITER;
+            jacobiSolver(A, col_b, x, set_iter); 
+            p.col(i) = x;
         }
+    }
 
-        if(use_cholesky==false){
-            // use LU when cholesky encounters numerical problem
-            Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
-            solver.analyzePattern(A);
-            solver.factorize(A);
-
-            if(solver.info() != Eigen::Success) {
-                std::cerr << "LU decomposition failed" << std::endl;
-                return false;
-            }
-
-            for (int i = 0; i < b.cols(); ++i) {
-                Eigen::VectorXd col_b = b.col(i);
-                Eigen::VectorXd col_x = solver.solve(col_b);
-                p.col(i) = col_x;
-            }
-
-            if(solver.info() != Eigen::Success) {
-                std::cerr << "LU solve failed" << std::endl;
-                return false;
-            }
+    if(solver_type==1){
+        for (int i = 0; i < b.cols(); ++i) {
+            Eigen::VectorXd col_b = b.col(i);
+            Eigen::VectorXd x = p.col(i);
+            if(set_iter==0) set_iter=MAX_ITER;
+            gaussSeidelSolver(A, col_b, x, set_iter); 
+            p.col(i) = x;
         }
-        return true;
+    }
+    // https://web.archive.org/web/20221006125537/http://eigen.tuxfamily.org/dox/group__TopicSparseSystems.html
+    if(solver_type==2){
+        iterativeSolver<Eigen::ConjugateGradient<Eigen::SparseMatrix<double>>>(A, b, p, set_iter, use_initial_x);
+    }
+
+    if(solver_type==3){
+        iterativeSolver<Eigen::BiCGSTAB<Eigen::SparseMatrix<double>>>(A, b, p, set_iter, use_initial_x);
+    }
+    // https://web.archive.org/web/20200223001751/http://eigen.tuxfamily.org/dox/unsupported/group__IterativeSolvers__Module.html
+    if(solver_type==4){
+        iterativeSolver<Eigen::MINRES<Eigen::SparseMatrix<double>>>(A, b, p, set_iter, use_initial_x);
+    }
+    if(solver_type==5){
+        iterativeSolver<Eigen::GMRES<Eigen::SparseMatrix<double>>>(A, b, p, set_iter, use_initial_x);
+    }
+    return true;
 }
 
 
@@ -122,6 +245,7 @@ private:
 
 int main(int argc, char *argv[])
 {   
+    //test_solver();
     bool use_cholesky = true;
     std::string infile = "";
     std::string outfile = "";
@@ -140,6 +264,10 @@ int main(int argc, char *argv[])
     std::string logfolder = "";
     
     std::unique_ptr<L0_Logger> loggerPtr;
+
+    int solver_type = 1;
+    int set_iter = 0;
+    int use_initial_x = 1;
 
     auto cli = (clipp::value("input file", infile),
                 clipp::value("output file", outfile),
@@ -160,7 +288,14 @@ int main(int argc, char *argv[])
                     & clipp::value("mul", mul),
                 clipp::option("--angle_math").set(dihadral_math).doc("set to mathematical definiation of dihedral angle. (wrong)"),
                 clipp::option("--log").set(log).doc("save intermediate energy result and mesh in logfolder(without /)")
-                    & clipp::value("logfolder", logfolder));
+                    & clipp::value("logfolder", logfolder),
+                clipp::option("--set_iter").doc("set iteration for iter method")
+                    & clipp::value("set_iter", set_iter),
+                clipp::option("--solver_type").doc("0:jacobi, 1: gauss-seidel, 2:CG, 3:BiCGSTAB, 4: MNRES")
+                    & clipp::value("solver_type", solver_type),
+                clipp::option("--use_initial_x").doc("MUST set default, else will fail(set it only for experiment)")
+                    &  clipp::value("use_initial_x", use_initial_x)
+                );
 
     if(parse(argc, argv, cli)) {
         std::cout << "SMD-L0: C++ implementation of \"Mesh Denoising via L0 Minimization\" " << std::endl;
@@ -230,7 +365,7 @@ int main(int argc, char *argv[])
         Eigen::SparseMatrix<double> A = I;
         A = A + beta * D.transpose() * D + alpha * R.transpose() * R;
         Eigen::MatrixXd b = V + beta * (D.transpose() * delta);
-        solver_warpper(A, b, p, use_cholesky);
+        solver_warpper(A, b, p, solver_type, set_iter, use_initial_x);
         // log global & all
         if(log){
             loggerPtr->log_global(p, V, D*p, delta, beta);
