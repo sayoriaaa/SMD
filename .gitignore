@@ -15,6 +15,7 @@ bash/*
 !bash/test_robust.bat
 !bash/cuda.bat
 !bash/test_iter.bat
+!bash/test_cuda.bat
 
 scripts/__pycache__
 # use to produce my own graduation paper's figures
