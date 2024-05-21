@@ -137,7 +137,7 @@ class SampleUnion:
 
     def show(self, canvas, fig_name='img.png', mesh_vis_type=None, 
              titles=None, sargs=None, show_bar=True, show_metrics=None, 
-             camera_position=None):
+             camera_position=None, zoom=1):
         # resemble_samples
         n = len(canvas)
         m = len(canvas[0])
@@ -170,6 +170,7 @@ class SampleUnion:
                     cmap="jet",
                     show_scalar_bar=show_bar
                 )
+                p.camera.zoom(zoom)
                 if camera_position!=None:
                     p.camera_position = camera_position
                 if titles!=None:
